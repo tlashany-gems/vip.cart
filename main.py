@@ -1,366 +1,1088 @@
-import time
+from flask import Flask, request, session, redirect, jsonify, render_template_string
+import requests
 import json
+import time
+import hashlib
 import os
-import urllib.request
-import urllib.parse
-import ssl
-import threading
+from datetime import datetime
+from threading import Lock
+
+app = Flask(__name__)
+app.secret_key = os.urandom(24)
 
 # ══════════════════════════════════════════
-#  CONFIG
+#  ACTIVE USERS TRACKER
 # ══════════════════════════════════════════
-BOT_TOKEN      = "7973273382:AAGfOQZmr6N_jkcy9wFc8J0l1C0UUvzyrj0"
-CHANNEL_ID     = "@FY_TF"
-CHECK_INTERVAL = 5
-MIN_GIFT       = 200          # ✅ كروت أكبر من 130 بس
-MAX_CARDS      = 2
-RECHARGE_URL   = "https://telegrambot.serv00.net/recharge.php"
+active_users = {}
+active_users_lock = Lock()
+USER_TIMEOUT = 300  # 5 minutes inactivity = offline
 
-ACCOUNTS = [
-    {"phone": "01008967492", "password": "##1122334455Qq"},
-    {"phone": "01018529827", "password": "1052003Mm@#$"},
-    {"phone": "01003971136", "password": "1052003Mm$#@"},
-]
+def update_user_activity(number):
+    with active_users_lock:
+        active_users[number] = time.time()
 
-STATE_FILE  = "bot_state.json"
-OFFSET_FILE = "tg_offset.txt"
-TG_URL      = f"https://api.telegram.org/bot{BOT_TOKEN}/"
+def get_active_count():
+    now = time.time()
+    with active_users_lock:
+        cutoff = now - USER_TIMEOUT
+        expired = [k for k, v in active_users.items() if v < cutoff]
+        for k in expired:
+            del active_users[k]
+        return len(active_users)
 
-tokens = [{"token": None, "expiry": 0} for _ in ACCOUNTS]
-
-CURRENT_ACCOUNT = 0
-
-SSL_CTX = ssl.create_default_context()
-SSL_CTX.check_hostname = False
-SSL_CTX.verify_mode    = ssl.CERT_NONE
+def remove_user(number):
+    with active_users_lock:
+        active_users.pop(number, None)
 
 # ══════════════════════════════════════════
-#  LOGGER
+#  HELPERS
 # ══════════════════════════════════════════
-def log(level, msg):
-    print(f"[{time.strftime('%H:%M:%S')}] [{level}] {msg}", flush=True)
+HEADERS_BASE = {
+    "User-Agent": "okhttp/4.11.0",
+    "x-agent-operatingsystem": "13",
+    "clientId": "AnaVodafoneAndroid",
+    "Accept-Language": "ar",
+    "x-agent-device": "Xiaomi 21061119AG",
+    "x-agent-version": "2025.10.3",
+    "x-agent-build": "1050",
+    "digitalId": "28RI9U7ISU8SW",
+    "device-id": "1df4efae59648ac3",
+    "Accept": "application/json",
+}
 
-# ══════════════════════════════════════════
-#  HTTP
-# ══════════════════════════════════════════
-def http_get(url, headers=None):
-    req = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as res:
-        return res.read().decode()
-
-def http_post(url, data, headers=None):
-    body = urllib.parse.urlencode(data).encode()
-    req  = urllib.request.Request(url, data=body, headers=headers or {}, method="POST")
-    with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as res:
-        return res.read().decode()
-
-def http_post_json(url, payload):
-    body = json.dumps(payload).encode()
-    req  = urllib.request.Request(
-        url, data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
-    with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as res:
-        return res.read().decode()
-
-# ══════════════════════════════════════════
-#  TELEGRAM
-# ══════════════════════════════════════════
-def tg(method, **params):
+def curl_post(url, payload, headers, is_json=False):
     try:
-        raw = http_post_json(TG_URL + method, params)
-        d   = json.loads(raw)
-        if not d.get("ok"):
-            desc = d.get("description", "")
-            if "not modified" not in desc and "not found" not in desc:
-                log("WARN", f"TG[{method}]: {desc}")
-            return None
-        return d.get("result")
+        h = {**HEADERS_BASE, **headers}
+        if is_json:
+            resp = requests.post(url, json=payload, headers=h, timeout=15, verify=False)
+        else:
+            resp = requests.post(url, data=payload, headers=h, timeout=15, verify=False)
+        return resp.json()
     except Exception as e:
-        log("ERR", f"TG[{method}]: {e}")
-        return None
+        return {}
 
-# ══════════════════════════════════════════
-#  VODAFONE
-# ══════════════════════════════════════════
-def vf_login(idx):
-    acc = ACCOUNTS[idx]
+def curl_get(url, headers):
     try:
-        raw = http_post(
-            "https://mobile.vodafone.com.eg/auth/realms/vf-realm/protocol/openid-connect/token",
-            data={
-                "grant_type":    "password",
-                "username":      acc["phone"],
-                "password":      acc["password"],
-                "client_secret": "95fd95fb-7489-4958-8ae6-d31a525cd20a",
-                "client_id":     "ana-vodafone-app"
-            },
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept":       "application/json",
-                "User-Agent":   "okhttp/4.11.0"
-            }
-        )
-        data       = json.loads(raw)
-        token      = data.get("access_token")
-        expires_in = data.get("expires_in", 3600)
-        if token:
-            tokens[idx]["token"]  = token
-            tokens[idx]["expiry"] = time.time() + expires_in - 180
-            log("INFO", f"✅ Login OK [{acc['phone']}] ~{expires_in//60} min")
-            return token
-        log("ERR", f"❌ Login failed [{acc['phone']}]: {data.get('error_description','?')}")
-        return None
-    except Exception as e:
-        log("ERR", f"vf_login[{idx}]: {e}")
-        return None
-
-def get_token(idx):
-    t = tokens[idx]
-    if t["token"] and time.time() < t["expiry"]:
-        return t["token"]
-    log("INFO", f"🔑 Refreshing [{ACCOUNTS[idx]['phone']}]...")
-    return vf_login(idx)
-
-def vf_promos(token, phone):
-    try:
-        raw_text = http_get(
-            f"https://web.vodafone.com.eg/services/dxl/ramadanpromo/promotion"
-            f"?@type=RamadanHub&channel=website&msisdn={phone}",
-            headers={
-                "Authorization":   f"Bearer {token}",
-                "User-Agent":      "Mozilla/5.0",
-                "Accept":          "application/json",
-                "clientId":        "WebsiteConsumer",
-                "api-host":        "PromotionHost",
-                "channel":         "WEB",
-                "Accept-Language": "ar",
-                "msisdn":          phone,
-                "Content-Type":    "application/json",
-                "Referer":         "https://web.vodafone.com.eg/ar/ramadan"
-            }
-        )
-        data  = json.loads(raw_text)
-        cards = []
-
-        for item in data:
-            if not isinstance(item, dict) or "pattern" not in item:
-                continue
-            for pat in item["pattern"]:
-                for action in pat.get("action", []):
-                    c = {x["name"]: str(x["value"])
-                         for x in action.get("characteristics", [])}
-                    if not c:
-                        continue
-                    try:
-                        gift = int(c.get("GIFT_UNITS", 0))
-                    except:
-                        continue
-
-                    # ✅ فلتر: gift لازم يكون أكبر من 130
-                    if gift <= MIN_GIFT:
-                        continue
-
-                    serial = str(c.get("CARD_SERIAL", "")).strip()
-                    if len(serial) != 13:
-                        continue
-                    try:
-                        amount    = int(c.get("amount", 0))
-                        remaining = int(c.get("REMAINING_DEDICATIONS", 0))
-                    except:
-                        continue
-                    cards.append({
-                        "serial":    serial,
-                        "gift":      gift,
-                        "amount":    amount,
-                        "remaining": remaining,
-                    })
-
-        cards.sort(key=lambda x: (x["gift"], x["amount"]), reverse=True)
-        return raw_text, cards
-
-    except Exception as e:
-        log("WARN", f"vf_promos[{phone}]: {e}")
-        return None, []
+        h = {**HEADERS_BASE, **headers}
+        resp = requests.get(url, headers=h, timeout=15, verify=False)
+        return resp.json()
+    except:
+        return {}
 
 # ══════════════════════════════════════════
-#  MESSAGE
+#  LOGIN BY PASSWORD
 # ══════════════════════════════════════════
-def build_msg(card):
-    serial = str(card["serial"]).strip()
-    ussd   = "*858*" + serial + "#"
-    link   = f"{RECHARGE_URL}?serial={serial}"
-
-    text = (
-        "*╭────═⌁TALASHNY⌁═────⟤*\n"
-        "*│╭✦───✦──────✦───⟢*\n"
-        f"*╞╡ Value ➜ جنيه* `{card['amount']}`\n"
-        f"*╞╡ Gift Units ➜ وحده* `{card['gift']}`\n"
-        f"*╞╡ Remaining ➜ متبقي* `{card['remaining']}`\n"
-        "*│╰✦────✦─⟐─✦────✦╮*\n"
-        "*│╭✦────✦─⟐─✦────✦╯*\n"
-        f"*╞╡ Code ➜* `{ussd}`\n"
-        "*│╰✦───✦──────✦───⟢*\n"
-        "*╰────═⌁TALASHNY⌁═────⟤*"
+def login_by_password(number, password):
+    payload = {
+        'grant_type': 'password',
+        'username': number,
+        'password': password,
+        'client_secret': '95fd95fb-7489-4958-8ae6-d31a525cd20a',
+        'client_id': 'ana-vodafone-app',
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    return curl_post(
+        "https://mobile.vodafone.com.eg/auth/realms/vf-realm/protocol/openid-connect/token",
+        payload, headers
     )
 
-    keyboard = {
-        "inline_keyboard": [[
-            {
-                "text": "⌁ اضغط لشحن اسرع ⌁",
-                "url":  link
-            }
-        ]]
+# ══════════════════════════════════════════
+#  LOGIN BY DATA (SEAMLESS) - FIXED
+# ══════════════════════════════════════════
+def login_by_data(device_ip=None, ua=None):
+    """
+    محاولة تسجيل الدخول عبر الداتا (seamless).
+    يمكن تمرير device_ip و user-agent من الطلب الحقيقي.
+    """
+    try:
+        step1_headers = {
+            "User-Agent": ua or "okhttp/4.12.0",
+            "Connection": "Keep-Alive",
+            "Accept-Encoding": "gzip",
+            "x-agent-operatingsystem": "13",
+            "clientId": "AnaVodafoneAndroid",
+            "Accept-Language": "ar",
+            "x-agent-device": "Xiaomi 21061119AG",
+            "x-agent-version": "2025.10.3",
+            "x-agent-build": "1050",
+            "digitalId": "28RI9U7ISU8SW",
+            "device-id": "1df4efae59648ac3",
+        }
+        if device_ip:
+            step1_headers["X-Forwarded-For"] = device_ip
+            step1_headers["X-Real-IP"] = device_ip
+
+        resp = requests.get(
+            "http://mobile.vodafone.com.eg/checkSeamless/realms/vf-realm/protocol/openid-connect/auth?client_id=cash-app",
+            headers=step1_headers, timeout=15, verify=False, allow_redirects=True
+        )
+        step1 = resp.json()
+    except Exception as e:
+        return {"error": f"فشل الاتصال بشبكة فودافون: {str(e)}"}
+
+    seamless_token = step1.get('seamlessToken', '')
+    msisdn = step1.get('msisdn', '')
+
+    if not seamless_token or not msisdn:
+        return {"error": "تأكد إن الداتا شغالة على خط فودافون. الاتصال تم لكن مفيش بيانات رجعت."}
+
+    number = '0' + str(msisdn)
+
+    step2_payload = {
+        'grant_type': 'password',
+        'client_secret': 'b86e30a8-ae29-467a-a71f-65c73f2ff5e3',
+        'client_id': 'cash-app',
+    }
+    step2_headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "User-Agent": ua or "okhttp/4.12.0",
+        "silentLogin": "true",
+        "CRP": "false",
+        "seamlessToken": seamless_token,
+        "firstTimeLogin": "true",
+        "x-agent-operatingsystem": "13",
+        "clientId": "AnaVodafoneAndroid",
+        "Accept-Language": "ar",
+        "x-agent-device": "Xiaomi 21061119AG",
+        "x-agent-version": "2025.10.3",
+        "x-agent-build": "1050",
+        "digitalId": "",
+        "device-id": "1df4efae59648ac3",
     }
 
-    return text, keyboard
-
-# ══════════════════════════════════════════
-#  STATE
-# ══════════════════════════════════════════
-def load_state():
-    return json.load(open(STATE_FILE, encoding="utf-8")) \
-           if os.path.exists(STATE_FILE) else {}
-
-def save_state(s):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(s, f, ensure_ascii=False, indent=2)
-
-def load_offset():
-    return int(open(OFFSET_FILE).read().strip()) \
-           if os.path.exists(OFFSET_FILE) else 0
-
-def save_offset(o):
-    open(OFFSET_FILE, "w").write(str(o))
-
-def clear_pending():
-    res = tg("getUpdates", offset=-1, limit=1)
-    if res:
-        last = res[0]["update_id"]
-        tg("getUpdates", offset=last + 1)
-        save_offset(last + 1)
-        log("INFO", f"🧹 Cleared — offset={last+1}")
-    else:
-        save_offset(0)
-
-# ══════════════════════════════════════════
-#  ✅ LONG POLLING — thread منفصل
-#  البوت بيستقبل التحديثات من السيرفر على طول
-# ══════════════════════════════════════════
-def long_poll_loop():
-    log("INFO", "📡 Long polling started — waiting for server updates...")
-    while True:
-        try:
-            offset  = load_offset()
-            # timeout=30 → السيرفر بيستنى 30 ثانية لو ما فيش updates
-            updates = tg(
-                "getUpdates",
-                offset=offset,
-                limit=100,
-                timeout=30,
-                allowed_updates=["callback_query", "message"]
-            )
-            if updates:
-                for upd in updates:
-                    uid = upd["update_id"]
-                    save_offset(uid + 1)
-                    log("INFO", f"📩 Update received: {uid}")
-        except Exception as e:
-            log("ERR", f"LongPoll: {e}")
-            time.sleep(3)
-
-# ══════════════════════════════════════════
-#  MAIN CHECK
-# ══════════════════════════════════════════
-def check_and_update():
-    global CURRENT_ACCOUNT
-
-    idx   = CURRENT_ACCOUNT
-    phone = ACCOUNTS[idx]["phone"]
-    log("INFO", f"🔄 [{idx+1}/3] {phone}")
-
-    CURRENT_ACCOUNT = (CURRENT_ACCOUNT + 1) % len(ACCOUNTS)
-
-    token = get_token(idx)
-    if not token:
-        log("ERR", f"❌ No token [{phone}]")
-        return
-
-    raw_text, all_cards = vf_promos(token, phone)
-    if raw_text is None:
-        return
-
-    log("INFO", f"🔁 [{phone}] — {len(all_cards)} cards with gift > {MIN_GIFT}")
-
-    target     = all_cards[:MAX_CARDS]
-    target_map = {c["serial"]: c for c in target}
-    state      = load_state()
-
-    # ✅ حذف الكروت اللي remaining=0 أو اختفت من السيرفر
-    for mid in list(state.keys()):
-        serial = state[mid]["serial"]
-        live   = target_map.get(serial)
-
-        should_delete = (
-            live is None or        # اختفى من السيرفر
-            live["remaining"] <= 0 # ✅ المتبقي وصل صفر
+    try:
+        resp2 = requests.post(
+            "https://mobile.vodafone.com.eg/auth/realms/vf-realm/protocol/openid-connect/token",
+            data=step2_payload, headers=step2_headers, timeout=15, verify=False
         )
+        data = resp2.json()
+    except:
+        return {"error": "فشل تبادل الـ token"}
 
-        if should_delete:
-            tg("deleteMessage", chat_id=CHANNEL_ID, message_id=int(mid))
-            del state[mid]
-            reason = "remaining=0" if (live and live["remaining"] <= 0) else "gone from server"
-            log("INFO", f"🗑️ Deleted msg={mid} serial={serial} [{reason}]")
-
-    # ✅ بعت الكروت الجديدة (gift > 130 فقط)
-    sent = {v["serial"] for v in state.values()}
-    for serial, card in target_map.items():
-        if len(state) >= MAX_CARDS:
-            break
-        if serial not in sent and card["remaining"] > 0:
-            txt, kb = build_msg(card)
-            res = tg("sendMessage", chat_id=CHANNEL_ID,
-                     text=txt, parse_mode="Markdown",
-                     reply_markup=kb)
-            if res and "message_id" in res:
-                state[str(res["message_id"])] = card.copy()
-                log("INFO", f"📤 Sent [{serial}] gift={card['gift']} remaining={card['remaining']} | {phone}")
-
-    save_state(state)
-    log("INFO", f"✅ Done — {len(state)} active")
+    if data.get('access_token'):
+        data['_number'] = number
+    return data
 
 # ══════════════════════════════════════════
-#  MAIN
+#  GET PROMOS
 # ══════════════════════════════════════════
-if __name__ == "__main__":
-    log("INFO", f"🚀 TALASHNY | MIN_GIFT > {MIN_GIFT} | Long Polling ON | Auto Delete remaining=0")
+def get_promos(token, number):
+    url = (
+        "https://web.vodafone.com.eg/services/dxl/ramadanpromo/promotion"
+        f"?@type=RamadanHub&channel=website&msisdn={requests.utils.quote(number)}"
+    )
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/133.0.0.0 Mobile Safari/537.36",
+        "Accept": "application/json",
+        "clientId": "WebsiteConsumer",
+        "api-host": "PromotionHost",
+        "channel": "WEB",
+        "Accept-Language": "ar",
+        "msisdn": number,
+        "Content-Type": "application/json",
+        "Referer": "https://web.vodafone.com.eg/ar/ramadan",
+    }
+    data = curl_get(url, headers)
 
-    # login كل الحسابات
-    for i in range(len(ACCOUNTS)):
-        vf_login(i)
+    cards = []
+    if not isinstance(data, list):
+        return cards
+    for item in data:
+        if not isinstance(item, dict) or 'pattern' not in item:
+            continue
+        for pat in item['pattern']:
+            for act in pat.get('action', []):
+                c = {}
+                for ch in act.get('characteristics', []):
+                    c[ch['name']] = str(ch['value'])
+                if not c:
+                    continue
+                serial = c.get('CARD_SERIAL', '').strip()
+                if len(serial) != 13:
+                    continue
+                cards.append({
+                    'serial': serial,
+                    'gift': int(c.get('GIFT_UNITS', 0)),
+                    'amount': int(c.get('amount', 0)),
+                    'remaining': int(c.get('REMAINING_DEDICATIONS', 0)),
+                })
+    cards.sort(key=lambda x: -x['gift'])
+    return cards
 
-    clear_pending()
+# ══════════════════════════════════════════
+#  REDEEM CARD
+# ══════════════════════════════════════════
+def redeem_card(token, number, serial):
+    payload = {
+        "@type": "Promo",
+        "channel": {"id": "1"},
+        "context": {"type": "RamadanRedeemFromHub"},
+        "pattern": [{"characteristics": [{"name": "cardSerial", "value": serial}]}],
+    }
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/133.0.0.0 Mobile Safari/537.36",
+        "clientId": "WebsiteConsumer",
+        "channel": "WEB",
+        "msisdn": number,
+        "Accept-Language": "AR",
+        "Origin": "https://web.vodafone.com.eg",
+        "Referer": "https://web.vodafone.com.eg/portal/hub",
+    }
+    try:
+        resp = requests.post(
+            "https://web.vodafone.com.eg/services/dxl/ramadanpromo/promotion",
+            json=payload, headers=headers, timeout=15, verify=False
+        )
+        return resp.status_code
+    except:
+        return 500
 
-    # ✅ شغّل long polling في thread منفصل عشان ما يوقفش الـ main loop
-    poll_thread = threading.Thread(target=long_poll_loop, daemon=True)
-    poll_thread.start()
+# ══════════════════════════════════════════
+#  ROUTES
+# ══════════════════════════════════════════
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    login_error = ''
 
-    last_check = 0
-    fail_count = 0
+    if request.method == 'POST' and request.form.get('action') == 'login':
+        method = request.form.get('method', 'password')
 
-    while True:
-        try:
-            if time.time() - last_check >= CHECK_INTERVAL:
-                check_and_update()
-                last_check = time.time()
-            fail_count = 0
-            time.sleep(1)
+        if method == 'data':
+            # pass real client IP + UA for seamless detection
+            client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+            client_ua = request.headers.get('User-Agent', '')
+            res = login_by_data(device_ip=client_ip, ua=client_ua)
+            if res.get('access_token'):
+                session['logged_in'] = True
+                session['token'] = res['access_token']
+                session['token_exp'] = int(time.time()) + int(res.get('expires_in', 3600)) - 120
+                session['number'] = res.get('_number', '')
+                session['password'] = ''
+                session['login_method'] = 'data'
+                update_user_activity(session['number'])
+                return redirect('/')
+            else:
+                err = res.get('error', '')
+                login_error = err if err else 'فشل تسجيل الدخول بالداتا — تأكد إن الداتا شغالة على خط فودافون'
+        else:
+            number = request.form.get('number', '').strip()
+            password = request.form.get('password', '').strip()
+            if number and password:
+                res = login_by_password(number, password)
+                if res.get('access_token'):
+                    session['logged_in'] = True
+                    session['token'] = res['access_token']
+                    session['token_exp'] = int(time.time()) + int(res.get('expires_in', 3600)) - 120
+                    session['number'] = number
+                    session['password'] = password
+                    session['login_method'] = 'password'
+                    update_user_activity(number)
+                    return redirect('/')
+                else:
+                    login_error = 'الرقم أو الباسورد غلط، حاول تاني'
+            else:
+                login_error = 'من فضلك ادخل الرقم والباسورد'
 
-        except KeyboardInterrupt:
-            log("INFO", "🛑 Stopped")
-            break
-        except Exception as e:
-            fail_count += 1
-            log("ERR", f"Error #{fail_count}: {e}")
-            time.sleep(5 if fail_count < 10 else 30)
+    if request.args.get('logout'):
+        number = session.get('number', '')
+        if number:
+            remove_user(number)
+        session.clear()
+        return redirect('/')
+
+    # AJAX: fetch cards
+    if request.args.get('fetch') and session.get('logged_in'):
+        number = session.get('number', '')
+        update_user_activity(number)
+        # refresh token if expired
+        if time.time() >= session.get('token_exp', 0):
+            if session.get('login_method') == 'data':
+                res = login_by_data()
+            else:
+                res = login_by_password(session['number'], session['password'])
+            if res.get('access_token'):
+                session['token'] = res['access_token']
+                session['token_exp'] = int(time.time()) + int(res.get('expires_in', 3600)) - 120
+                if res.get('_number'):
+                    session['number'] = res['_number']
+
+        cards = get_promos(session['token'], session['number'])
+        return jsonify({
+            'success': True,
+            'promos': cards,
+            'number': session['number'],
+            'active_users': get_active_count()
+        })
+
+    # AJAX: active users count
+    if request.args.get('ping') and session.get('logged_in'):
+        update_user_activity(session.get('number', ''))
+        return jsonify({'active_users': get_active_count()})
+
+    # AJAX: redeem
+    if request.args.get('redeem') and session.get('logged_in'):
+        serial = request.args.get('serial', '').strip()
+        target_num = request.args.get('target', session.get('number', '')).strip()
+        use_token = session['token']
+
+        if target_num != session.get('number', ''):
+            t_pass = request.args.get('tpass', '').strip()
+            if t_pass:
+                res2 = login_by_password(target_num, t_pass)
+                if res2.get('access_token'):
+                    use_token = res2['access_token']
+
+        code = redeem_card(use_token, target_num, serial)
+        return jsonify({'success': code == 200, 'code': code})
+
+    is_logged_in = session.get('logged_in', False)
+    user_number = session.get('number', '')
+    active_count = get_active_count() if is_logged_in else 0
+
+    return render_template_string(HTML_TEMPLATE,
+        is_logged_in=is_logged_in,
+        user_number=user_number,
+        login_error=login_error,
+        active_count=active_count,
+        form_number=request.form.get('number', '') if request.method == 'POST' else ''
+    )
+
+
+# ══════════════════════════════════════════
+#  HTML TEMPLATE
+# ══════════════════════════════════════════
+HTML_TEMPLATE = r"""<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>TALASHNY — فودافون</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Cairo:wght@400;500;600;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --red:#e60000;--red2:#9a0000;--red-glow:rgba(230,0,0,.25);--red-dim:rgba(230,0,0,.08);
+  --g1:#c8a84b;--g2:#f5d070;--g3:#8a6820;--g4:rgba(200,168,75,.12);
+  --bg:#07070a;--l1:#0d0d12;--l2:#121217;--l3:#18181f;--l4:#1f1f28;--l5:#26262f;
+  --ink:#eeeae0;--ink2:#a09880;--ink3:#504e48;
+  --stroke:rgba(200,168,75,.1);--stroke2:rgba(200,168,75,.22);
+  --r:20px;--r-sm:13px;--r-xs:9px;
+  --spring:cubic-bezier(.34,1.56,.64,1);--ease:cubic-bezier(.4,0,.2,1);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{height:100%;-webkit-font-smoothing:antialiased;}
+body{
+  font-family:'Cairo',sans-serif;background:var(--bg);color:var(--ink);
+  min-height:100vh;overflow-x:hidden;touch-action:manipulation;
+  background-image:
+    radial-gradient(ellipse 70% 35% at 50% 0%,rgba(200,168,75,.13) 0%,rgba(200,168,75,.04) 40%,transparent 70%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+}
+.banner{position:fixed;top:0;left:0;right:0;height:90px;background:rgba(0,0,0,.97);display:flex;justify-content:center;align-items:center;z-index:1000;border-bottom:1px solid var(--stroke);box-shadow:0 4px 30px rgba(0,0,0,.8);}
+.banner-inner{display:flex;flex-direction:column;align-items:center;gap:4px;}
+.banner-letters{display:flex;gap:0;font-size:2.6rem;font-weight:900;letter-spacing:7px;text-transform:uppercase;}
+.banner-letters span{display:inline-block;color:transparent;background:linear-gradient(90deg,#b0b0b0 0%,#fff 20%,#e0e0e0 40%,#fff 60%,#a0a0a0 80%,#c0c0c0 100%);background-size:400% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:chrome 4s linear infinite;animation-delay:calc(var(--i)*.18s);}
+@keyframes chrome{0%{background-position:400% center}100%{background-position:-400% center}}
+
+/* ACTIVE USERS BADGE */
+.active-badge{display:flex;align-items:center;gap:5px;font-family:'Cairo',sans-serif;font-size:.58rem;font-weight:700;color:rgba(200,168,75,.6);letter-spacing:1px;}
+.active-dot{width:5px;height:5px;border-radius:50%;background:#4cff9a;box-shadow:0 0 5px #4cff9a;animation:ping2 1.6s ease-in-out infinite;}
+@keyframes ping2{0%{box-shadow:0 0 0 0 rgba(76,255,154,.5)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.active-num{color:#4cff9a;font-family:'JetBrains Mono',monospace;font-size:.65rem;}
+
+.page{max-width:430px;margin:0 auto;padding:0 10px;}
+@keyframes up{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+.surface{background:var(--l1);border:1px solid var(--stroke);border-radius:var(--r);}
+
+/* LOGIN */
+#LOGIN_SCREEN{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:110px 16px 70px;animation:up .5s var(--spring) both;}
+.login-page{width:100%;max-width:390px;display:flex;flex-direction:column;gap:14px;}
+.login-brand{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:4px;}
+.login-logo{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--l3),var(--l5));border:1px solid var(--stroke2);display:flex;align-items:center;justify-content:center;box-shadow:0 0 24px rgba(200,168,75,.15),0 4px 12px rgba(0,0,0,.5);}
+.login-logo svg{width:22px;height:22px;fill:none;stroke:var(--g1);stroke-width:1.6;}
+.login-eyebrow{font-size:.55rem;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:var(--ink3);}
+.login-title{font-family:'Playfair Display',serif;font-size:1.2rem;font-weight:700;color:var(--ink);text-align:center;}
+.login-title em{font-style:italic;color:transparent;background:linear-gradient(135deg,var(--g1),var(--g2),var(--g1));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.method-tabs{display:flex;gap:8px;}
+.mtab{flex:1;padding:10px 8px;background:var(--l2);border:1px solid var(--stroke);border-radius:var(--r-sm);text-align:center;font-family:'Cairo',sans-serif;font-size:.72rem;font-weight:700;color:var(--ink2);cursor:pointer;transition:all .2s var(--spring);}
+.mtab.active{background:var(--g4);border-color:rgba(200,168,75,.4);color:var(--g2);}
+.mtab:active{transform:scale(.95);}
+.form-section{display:none;}
+.form-section.visible{display:flex;flex-direction:column;}
+.lf-row{display:flex;align-items:stretch;border-bottom:1px solid var(--stroke);position:relative;}
+.lf-row:last-of-type{border-bottom:none;}
+.lf-row:focus-within{background:rgba(200,168,75,.025);}
+.lf-icon{width:48px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--stroke);background:var(--l2);}
+.lf-icon svg{width:16px;height:16px;stroke:var(--ink3);stroke-width:1.6;fill:none;transition:stroke .3s;}
+.lf-row:focus-within .lf-icon svg{stroke:var(--g1);}
+.lf-body{flex:1;padding:12px 14px;display:flex;flex-direction:column;}
+.lf-lbl{font-size:.5rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:3px;transition:color .3s;}
+.lf-row:focus-within .lf-lbl{color:var(--g1);}
+.lf-input{background:transparent;border:none;outline:none;font-family:'Cairo',sans-serif;font-size:.93rem;font-weight:600;color:var(--ink);width:100%;}
+.lf-input::placeholder{color:var(--ink3);font-weight:400;font-size:.8rem;}
+.lf-row::after{content:'';position:absolute;right:0;top:0;bottom:0;width:0;background:var(--g1);transition:width .25s;}
+.lf-row:focus-within::after{width:3px;}
+.data-info{display:flex;align-items:flex-start;gap:10px;padding:14px 16px;background:rgba(200,168,75,.04);border-top:1px solid var(--stroke);}
+.data-info svg{width:16px;height:16px;stroke:var(--g1);stroke-width:1.6;fill:none;flex-shrink:0;margin-top:1px;}
+.data-info p{font-size:.7rem;color:var(--ink2);line-height:1.8;}
+.data-info p strong{color:var(--g2);display:block;margin-bottom:2px;font-size:.72rem;}
+/* device fields in data login */
+.data-fields{padding:0 0 0 0;}
+.btn-wrap{padding:14px;}
+.btn-login{width:100%;padding:14px;border:none;border-radius:var(--r-sm);background:linear-gradient(135deg,var(--g3),var(--g1),var(--g2));color:#1a0e00;font-family:'Cairo',sans-serif;font-size:.88rem;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:0 5px 22px rgba(200,168,75,.28),0 2px 8px rgba(0,0,0,.4);transition:transform .2s var(--spring),box-shadow .25s;position:relative;overflow:hidden;}
+.btn-login::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.15) 0%,transparent 55%);}
+.btn-login::after{content:'';position:absolute;top:0;left:-100%;width:60%;height:100%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.18),transparent);animation:shine 3.5s ease-in-out infinite;}
+@keyframes shine{0%,100%{left:-100%}50%{left:150%}}
+.btn-login svg{width:15px;height:15px;stroke:currentColor;stroke-width:2.2;fill:none;position:relative;z-index:1;}
+.btn-login span{position:relative;z-index:1;}
+.btn-login:hover{transform:translateY(-2px);box-shadow:0 9px 30px rgba(200,168,75,.4);}
+.btn-login:active{transform:scale(.97);}
+.btn-login:disabled{opacity:.5;cursor:wait;}
+.btn-spin{width:15px;height:15px;border-radius:50%;border:2px solid rgba(26,14,0,.25);border-top-color:#1a0e00;animation:rotate .7s linear infinite;display:none;position:relative;z-index:1;}
+.btn-login.loading .btn-spin{display:block;}
+.btn-login.loading .btn-txt{display:none;}
+@keyframes rotate{to{transform:rotate(360deg)}}
+.error-banner{display:flex;align-items:center;gap:9px;background:rgba(230,0,0,.06);border:1px solid rgba(230,0,0,.2);border-radius:var(--r-xs);padding:11px 14px;font-size:.7rem;color:#ff8a80;font-weight:600;animation:up .3s var(--spring) both;}
+.error-banner svg{width:14px;height:14px;stroke:#ff6b6b;stroke-width:2;fill:none;flex-shrink:0;}
+.login-note{text-align:center;font-size:.6rem;color:var(--ink3);}
+
+/* APP */
+#APP{display:none;}
+#APP.active{display:block;}
+.app-body{padding-top:110px;padding-bottom:88px;}
+.user-pill{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;margin-bottom:12px;background:var(--l1);border:1px solid var(--stroke);border-radius:var(--r-xs);}
+.pill-info{display:flex;align-items:center;gap:8px;}
+.pill-dot{width:7px;height:7px;border-radius:50%;background:var(--g1);box-shadow:0 0 6px var(--g2);}
+.pill-num{font-family:'JetBrains Mono',monospace;font-size:.8rem;font-weight:700;color:var(--g2);}
+.pill-right{display:flex;align-items:center;gap:10px;}
+.online-count{display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:.62rem;color:#4cff9a;background:rgba(76,255,154,.07);border:1px solid rgba(76,255,154,.18);border-radius:20px;padding:3px 8px;}
+.online-count svg{width:9px;height:9px;fill:#4cff9a;}
+.btn-logout{display:flex;align-items:center;gap:5px;background:transparent;border:1px solid rgba(230,0,0,.18);border-radius:var(--r-xs);padding:5px 12px;font-family:'Cairo',sans-serif;font-size:.65rem;font-weight:700;color:rgba(230,0,0,.5);cursor:pointer;transition:all .2s;}
+.btn-logout:hover{color:#ff6b6b;border-color:rgba(230,0,0,.4);background:rgba(230,0,0,.05);}
+.btn-logout svg{width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;}
+
+/* SEARCH SCREEN */
+#US{display:flex;flex-direction:column;gap:14px;animation:up .5s var(--spring) both;}
+.us-head{padding:8px 0 4px;}
+.us-eyebrow{display:inline-flex;align-items:center;gap:6px;font-size:.57rem;font-weight:700;letter-spacing:3.5px;text-transform:uppercase;color:var(--g1);opacity:.8;margin-bottom:7px;}
+.us-eyebrow i{width:5px;height:5px;border-radius:50%;background:var(--g2);box-shadow:0 0 5px var(--g2);}
+.us-title{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:700;line-height:1.35;margin-bottom:5px;}
+.us-title em{font-style:italic;color:transparent;background:linear-gradient(135deg,var(--g1),var(--g2),var(--g1));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.us-sub{font-size:.75rem;color:var(--ink2);line-height:1.8;}
+.us-card{overflow:hidden;}
+.card-sect{border-bottom:1px solid var(--stroke);}
+.card-sect-head{padding:10px 14px 4px;font-family:'Playfair Display',serif;font-size:.58rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);display:flex;align-items:center;gap:7px;}
+.card-sect-head::before{content:'';display:block;width:14px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
+.field-row{display:flex;align-items:stretch;position:relative;transition:background .25s;}
+.field-row:focus-within{background:rgba(200,168,75,.025);}
+.field-icon{width:50px;flex-shrink:0;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--stroke);background:var(--l2);}
+.field-icon svg{width:18px;height:18px;stroke:var(--ink3);stroke-width:1.6;fill:none;transition:stroke .3s;}
+.field-row:focus-within .field-icon svg{stroke:var(--g1);}
+.field-right{flex:1;padding:14px 0;display:flex;flex-direction:column;align-items:center;}
+.field-lbl{font-family:'Playfair Display',serif;font-size:.58rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:4px;transition:color .3s;}
+.field-row:focus-within .field-lbl{color:var(--g1);}
+.field-input{background:transparent;border:none;outline:none;font-family:'Playfair Display',serif;font-size:1.9rem;font-weight:700;color:var(--ink);text-align:center;max-width:160px;}
+.field-input::placeholder{font-family:'Cairo',sans-serif;color:var(--ink3);font-size:.85rem;font-weight:400;}
+.field-row::after{content:'';position:absolute;right:0;top:0;bottom:0;width:0;background:var(--g1);transition:width .25s;}
+.field-row:focus-within::after{width:3px;}
+.quick-section{padding:12px 16px 14px;border-bottom:1px solid var(--stroke);}
+.quick-lbl{font-size:.57rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+.quick-lbl::before{content:'';display:block;width:12px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
+.quick-chips{display:flex;gap:6px;}
+.chip{flex:1;padding:9px 4px;background:var(--l2);border:1px solid var(--stroke);border-radius:var(--r-xs);text-align:center;font-family:'Playfair Display',serif;font-size:.88rem;font-weight:700;color:var(--ink2);cursor:pointer;transition:all .2s var(--spring);}
+.chip:hover{border-color:var(--stroke2);color:var(--g2);}
+.chip.sel{background:var(--g4);border-color:rgba(200,168,75,.45);color:var(--g2);}
+.chip:active{transform:scale(.9);}
+.charge-mode-section{padding:14px 16px;border-bottom:1px solid var(--stroke);}
+.charge-mode-lbl{font-size:.57rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+.charge-mode-lbl::before{content:'';display:block;width:12px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
+.cm-btns{display:flex;gap:8px;}
+.cm-btn{flex:1;padding:14px 8px;background:var(--l2);border:1px solid var(--stroke);border-radius:var(--r-sm);text-align:center;cursor:pointer;transition:all .2s var(--spring);}
+.cm-btn.sel{background:rgba(230,0,0,.06);border-color:rgba(230,0,0,.35);}
+.cm-btn:active{transform:scale(.96);}
+.cm-btn-icon{width:28px;height:28px;margin:0 auto 7px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
+.cm-btn-icon svg{width:16px;height:16px;stroke-width:1.8;fill:none;}
+.cm-btn.online .cm-btn-icon{background:rgba(230,0,0,.1);border:1px solid rgba(230,0,0,.2);}
+.cm-btn.online .cm-btn-icon svg{stroke:var(--red);}
+.cm-btn.dial .cm-btn-icon{background:rgba(200,168,75,.1);border:1px solid rgba(200,168,75,.2);}
+.cm-btn.dial .cm-btn-icon svg{stroke:var(--g2);}
+.cm-btn strong{display:block;font-family:'Cairo',sans-serif;font-size:.75rem;font-weight:700;color:var(--ink);margin-bottom:3px;}
+.cm-btn small{font-size:.6rem;color:var(--ink3);}
+.online-target-section{padding:0 16px;max-height:0;overflow:hidden;transition:max-height .35s var(--ease),padding .35s;}
+.online-target-section.open{max-height:220px;padding:14px 16px;}
+.ot-lbl{font-size:.57rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+.ot-lbl::before{content:'';display:block;width:12px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
+.ot-btns{display:flex;gap:7px;}
+.ot-btn{flex:1;padding:10px 7px;background:var(--l2);border:1px solid var(--stroke);border-radius:var(--r-xs);text-align:center;font-family:'Cairo',sans-serif;font-size:.7rem;font-weight:700;color:var(--ink2);cursor:pointer;transition:all .2s var(--spring);}
+.ot-btn.sel{background:var(--g4);border-color:rgba(200,168,75,.4);color:var(--g2);}
+.ot-btn:active{transform:scale(.93);}
+.other-num-form{margin-top:10px;display:none;flex-direction:column;gap:6px;}
+.other-num-form.visible{display:flex;}
+.ofield{display:flex;align-items:stretch;border:1px solid var(--stroke);border-radius:var(--r-xs);overflow:hidden;}
+.ofield-icon{width:40px;display:flex;align-items:center;justify-content:center;background:var(--l2);border-left:1px solid var(--stroke);}
+.ofield-icon svg{width:14px;height:14px;stroke:var(--ink3);stroke-width:1.6;fill:none;}
+.ofield input{flex:1;background:transparent;border:none;outline:none;padding:10px 12px;font-family:'Cairo',sans-serif;font-size:.85rem;font-weight:600;color:var(--ink);}
+.ofield input::placeholder{color:var(--ink3);font-weight:400;font-size:.78rem;}
+.go-section{padding:16px;}
+.btn-go{width:100%;padding:16px;border:none;border-radius:var(--r-sm);background:linear-gradient(135deg,var(--red2),var(--red),#ff1a1a);color:#fff;font-family:'Cairo',sans-serif;font-size:.9rem;font-weight:900;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:0 6px 28px rgba(230,0,0,.35),0 2px 8px rgba(0,0,0,.5);transition:transform .2s var(--spring),box-shadow .25s;position:relative;overflow:hidden;}
+.btn-go::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.12) 0%,transparent 50%);}
+.btn-go::after{content:'';position:absolute;top:0;left:-100%;width:60%;height:100%;background:linear-gradient(105deg,transparent,rgba(255,255,255,.1),transparent);animation:shine 3.5s ease-in-out infinite;}
+.btn-go svg{width:17px;height:17px;stroke:#fff;stroke-width:2.2;fill:none;position:relative;z-index:1;}
+.btn-go span{position:relative;z-index:1;}
+.btn-go:hover{transform:translateY(-2px);box-shadow:0 10px 36px rgba(230,0,0,.45);}
+.btn-go:active{transform:scale(.97);}
+
+/* CARDS SCREEN */
+#CS{display:none;flex-direction:column;gap:11px;animation:up .4s var(--spring) both;}
+.cs-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;}
+.cs-info{font-family:'Playfair Display',serif;font-size:.8rem;color:var(--ink2);}
+.cs-info strong{color:var(--g2);}
+.cs-back{display:flex;align-items:center;gap:5px;background:var(--l3);border:1px solid var(--stroke);border-radius:var(--r-xs);padding:7px 14px;font-family:'Cairo',sans-serif;font-size:.7rem;font-weight:700;color:var(--ink2);cursor:pointer;transition:all .2s;}
+.cs-back:hover{color:var(--ink);border-color:var(--stroke2);}
+.cs-back svg{width:11px;height:11px;stroke:currentColor;stroke-width:2.5;fill:none;}
+.timer-wrap{padding:16px 18px;}
+.timer-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;}
+.timer-left{display:flex;align-items:center;gap:9px;}
+.timer-dot{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 0 0 var(--red-glow);animation:ping 1.4s ease-in-out infinite;}
+@keyframes ping{0%{box-shadow:0 0 0 0 var(--red-glow)}70%{box-shadow:0 0 0 8px rgba(230,0,0,0)}100%{box-shadow:0 0 0 0 transparent}}
+.timer-text{font-family:'Playfair Display',serif;font-size:.7rem;font-weight:700;color:var(--ink2);}
+.timer-count{font-family:'Playfair Display',serif;font-size:2rem;font-weight:700;color:var(--ink);transition:color .3s;font-variant-numeric:tabular-nums;}
+.timer-count.hot{color:var(--red);}
+.timer-bar{height:3px;background:var(--l5);border-radius:4px;overflow:hidden;}
+.timer-prog{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--g3),var(--g1),var(--g2));transition:width 1s linear;box-shadow:0 0 8px rgba(200,168,75,.3);}
+.tgl-row{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;cursor:pointer;}
+.tgl-txt strong{display:block;font-family:'Playfair Display',serif;font-size:.77rem;font-weight:700;color:var(--ink);margin-bottom:2px;}
+.tgl-txt small{font-size:.62rem;color:var(--ink2);}
+.sw{position:relative;width:42px;height:24px;flex-shrink:0;}
+.sw input{opacity:0;width:0;height:0;position:absolute;}
+.sw-track{position:absolute;inset:0;border-radius:30px;background:var(--l4);border:1px solid var(--stroke);cursor:pointer;transition:all .3s;}
+.sw-track::before{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:#888;top:2px;right:2px;box-shadow:0 1px 4px rgba(0,0,0,.5);transition:transform .3s var(--spring),background .3s;}
+.sw input:checked+.sw-track{background:linear-gradient(135deg,var(--g3),var(--g1));border-color:rgba(200,168,75,.35);}
+.sw input:checked+.sw-track::before{transform:translateX(-18px);background:#fff;}
+.cards-list{display:flex;flex-direction:column;gap:10px;}
+.pc{border-radius:var(--r);overflow:visible;position:relative;animation:cardIn .45s var(--spring) both;animation-delay:calc(var(--i,0)*.07s);}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+.pc::after{content:'';position:absolute;inset:-1px;border-radius:calc(var(--r) + 1px);border:1px solid rgba(200,168,75,.28);pointer-events:none;z-index:10;}
+.pc.best::after{border:1.5px solid rgba(200,168,75,.65);box-shadow:0 0 14px rgba(200,168,75,.18);}
+.pc.best::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;z-index:11;border-radius:var(--r) var(--r) 0 0;background:linear-gradient(90deg,transparent 5%,var(--g3) 20%,var(--g2) 50%,var(--g3) 80%,transparent 95%);}
+.pc-bg{position:absolute;inset:0;background:linear-gradient(150deg,rgba(5,5,10,.97) 0%,rgba(10,8,15,.8) 100%);border-radius:var(--r);}
+.pc-inner{border-radius:var(--r);overflow:hidden;position:relative;}
+.pc-badge{position:absolute;top:13px;left:13px;z-index:4;font-size:.52rem;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;padding:3px 10px;border-radius:5px;color:#1a0e00;background:linear-gradient(135deg,var(--g2),var(--g1));box-shadow:0 2px 10px rgba(200,168,75,.35);}
+.pc-content{position:relative;z-index:2;padding:10px 12px 11px;}
+.pc-stats{display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:9px;}
+.pc.best .pc-stats{padding-top:12px;}
+.pc-stat{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;padding:0 4px;}
+.pc-stat:not(:last-child){border-left:1px solid rgba(255,255,255,.07);}
+.pc-stat-icon svg{width:12px;height:12px;fill:none;stroke-width:1.8;}
+.ic-amt svg{stroke:#ff8a80;}.ic-gift svg{stroke:var(--g2);}.ic-rem svg{stroke:#82b1ff;}
+.pc-stat-val{font-family:'Playfair Display',serif;font-size:.82rem;font-weight:700;color:#fff;line-height:1;margin-top:1px;}
+.pc-stat-lbl{font-size:.48rem;color:rgba(255,255,255,.28);}
+.pc-serial-wrap{display:flex;justify-content:center;margin-bottom:8px;}
+.pc-serial{display:inline-flex;align-items:center;gap:8px;background:rgba(0,0,0,.38);border-radius:8px;padding:6px 8px 6px 10px;border:1px solid rgba(200,168,75,.12);}
+.serial-num{font-family:'JetBrains Mono',monospace;font-size:.88rem;font-weight:700;color:#fff;letter-spacing:2px;white-space:nowrap;}
+.serial-copy{width:25px;height:25px;border-radius:6px;border:1px solid rgba(200,168,75,.15);background:rgba(200,168,75,.05);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s var(--spring);}
+.serial-copy svg{width:11px;height:11px;stroke:rgba(200,168,75,.4);stroke-width:2;fill:none;}
+.serial-copy:hover{background:rgba(200,168,75,.14);border-color:rgba(200,168,75,.38);}
+.serial-copy:active{transform:scale(.86);}
+.pc-action{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;}
+.btn-online-charge{display:inline-flex;align-items:center;gap:6px;padding:7px 16px;background:rgba(230,0,0,.1);border:1px solid rgba(230,0,0,.28);border-radius:20px;font-family:'Cairo',sans-serif;font-size:.72rem;font-weight:700;color:#ff8a80;cursor:pointer;transition:all .2s var(--spring);}
+.btn-online-charge svg{width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;}
+.btn-online-charge:hover{background:rgba(230,0,0,.18);border-color:rgba(230,0,0,.45);}
+.btn-online-charge.loading{opacity:.6;pointer-events:none;}
+.btn-dial-link{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:rgba(200,168,75,.5);font-family:'Cairo',sans-serif;font-size:.72rem;font-weight:700;padding:7px 16px;border:1px solid rgba(200,168,75,.12);border-radius:20px;background:rgba(200,168,75,.04);transition:all .2s;}
+.btn-dial-link svg{width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;}
+.btn-dial-link:hover{color:rgba(200,168,75,.8);border-color:rgba(200,168,75,.3);}
+.toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%) translateY(20px);background:rgba(15,15,20,.97);border:1px solid var(--stroke);border-radius:30px;padding:10px 20px;font-family:'Cairo',sans-serif;font-size:.75rem;font-weight:700;color:var(--ink);opacity:0;pointer-events:none;transition:all .3s var(--spring);z-index:999;white-space:nowrap;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.ok{border-color:rgba(0,200,100,.3);color:#4cff9a;}
+.toast.err{border-color:rgba(230,0,0,.3);color:#ff8a80;}
+.loading-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px 20px;animation:up .35s var(--spring) both;}
+.spin{width:30px;height:30px;border-radius:50%;border:2px solid rgba(200,168,75,.1);border-top-color:var(--g1);animation:rotate .8s linear infinite;}
+.spin-lbl{font-family:'Playfair Display',serif;font-size:.73rem;color:var(--ink2);font-weight:700;}
+.empty-wrap{text-align:center;padding:36px 20px;font-family:'Playfair Display',serif;font-size:.8rem;color:var(--ink2);line-height:2;}
+.empty-wrap svg{width:26px;height:26px;stroke:var(--ink3);stroke-width:1.5;fill:none;margin-bottom:10px;}
+.bnav{position:fixed;bottom:0;left:0;right:0;z-index:200;display:flex;justify-content:space-around;align-items:center;padding:10px 0 18px;background:rgba(7,7,10,.97);backdrop-filter:blur(28px);border-top:1px solid var(--stroke);}
+.bnav a{text-decoration:none;color:var(--ink3);display:flex;flex-direction:column;align-items:center;padding:6px 20px;border-radius:12px;transition:color .2s,transform .25s var(--spring);}
+.bnav a:hover{color:var(--g1);transform:translateY(-3px);}
+.bnav a svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.6;fill:none;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:var(--l1);}::-webkit-scrollbar-thumb{background:var(--l5);border-radius:4px;}
+</style>
+</head>
+<body oncontextmenu="return false;">
+
+<div class="banner">
+  <div class="banner-inner">
+    <div class="banner-letters">
+      <span style="--i:0">Y</span><span style="--i:1">N</span><span style="--i:2">H</span>
+      <span style="--i:3">S</span><span style="--i:4">A</span><span style="--i:5">L</span>
+      <span style="--i:6">A</span><span style="--i:7">T</span>
+    </div>
+    {% if is_logged_in %}
+    <div class="active-badge">
+      <div class="active-dot"></div>
+      <span class="active-num" id="ACTIVE_NUM">{{ active_count }}</span>
+      <span>متصل الآن</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% if not is_logged_in %}
+<div id="LOGIN_SCREEN">
+  <div class="login-page">
+    <div class="login-brand">
+      <div class="login-logo">
+        <svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      </div>
+      <div class="login-eyebrow">Premium Access</div>
+      <div class="login-title">أهلاً في <em>TALASHNY</em></div>
+    </div>
+
+    {% if login_error %}
+    <div class="error-banner">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      {{ login_error }}
+    </div>
+    {% endif %}
+
+    <div class="method-tabs">
+      <div class="mtab active" id="TAB_PASS" onclick="switchTab('password')">
+        <svg style="width:14px;height:14px;stroke:currentColor;stroke-width:1.8;fill:none;display:inline-block;vertical-align:middle;margin-left:5px;" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        رقم وباسورد
+      </div>
+      <div class="mtab" id="TAB_DATA" onclick="switchTab('data')">
+        <svg style="width:14px;height:14px;stroke:currentColor;stroke-width:1.8;fill:none;display:inline-block;vertical-align:middle;margin-left:5px;" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+        بيانات الجهاز
+      </div>
+    </div>
+
+    <!-- FORM: PASSWORD -->
+    <form method="POST" id="FORM_PASS" class="form-section visible">
+      <input type="hidden" name="action" value="login">
+      <input type="hidden" name="method" value="password">
+      <div class="surface">
+        <div class="lf-row">
+          <div class="lf-icon">
+            <svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+          </div>
+          <div class="lf-body">
+            <span class="lf-lbl">رقم الموبايل</span>
+            <input class="lf-input" type="tel" name="number" placeholder="01XXXXXXXXX" inputmode="tel" autocomplete="tel" required value="{{ form_number }}">
+          </div>
+        </div>
+        <div class="lf-row">
+          <div class="lf-icon">
+            <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <div class="lf-body">
+            <span class="lf-lbl">الباسورد</span>
+            <input class="lf-input" type="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+          </div>
+        </div>
+        <div class="btn-wrap">
+          <button type="submit" class="btn-login" id="BTN_LOGIN_PASS">
+            <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            <span class="btn-txt">دخـول</span>
+            <div class="btn-spin"></div>
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <!-- FORM: DATA (seamless) -->
+    <form method="POST" id="FORM_DATA" class="form-section">
+      <input type="hidden" name="action" value="login">
+      <input type="hidden" name="method" value="data">
+      <div class="surface">
+        <div class="data-info">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <p>
+            <strong>تسجيل دخول بداتا الجهاز</strong>
+            تأكد إن الداتا شغالة على الخط. السيستم هيجيب بياناتك تلقائياً من شبكة فودافون.
+            لازم تكون متصل بداتا فودافون مش واي فاي.
+          </p>
+        </div>
+        <div class="btn-wrap" style="padding-top:14px;">
+          <button type="submit" class="btn-login" id="BTN_LOGIN_DATA">
+            <svg viewBox="0 0 24 24"><path d="M1 6s0-2 2-2 2 2 2 2v8s0 2 2 2 2-2 2-2V6s0-2 2-2 2 2 2 2v8s0 2 2 2 2-2 2-2V6s0-2 2-2 2 2 2 2"/></svg>
+            <span class="btn-txt">دخول بالداتا</span>
+            <div class="btn-spin"></div>
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <div class="login-note">بياناتك محمية ومش بتتحفظ على السيرفر</div>
+  </div>
+</div>
+
+{% else %}
+<div id="APP" class="active">
+  <div class="app-body">
+    <div class="page">
+
+      <div id="US">
+        <div class="us-head">
+          <div class="us-eyebrow"><i></i>Premium<i></i></div>
+          <div class="us-title">ابحث عن<br><em>ㅤأنسب كارت</em></div>
+          <div class="us-sub">حدد الوحدات المطلوبة وطريقة الشحن</div>
+        </div>
+
+        <div class="user-pill">
+          <div class="pill-info">
+            <div class="pill-dot"></div>
+            <span class="pill-num">{{ user_number }}</span>
+          </div>
+          <div class="pill-right">
+            <div class="online-count" id="PILL_ONLINE">
+              <svg viewBox="0 0 8 8"><circle cx="4" cy="4" r="4"/></svg>
+              <span id="PILL_CNT">{{ active_count }}</span>
+            </div>
+            <a href="/?logout=1" class="btn-logout">
+              <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              خروج
+            </a>
+          </div>
+        </div>
+
+        <div class="surface us-card">
+          <div class="card-sect">
+            <div class="card-sect-head">فئة الكارت (وحدات)</div>
+            <div class="field-row">
+              <div class="field-icon">
+                <svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </div>
+              <div class="field-right">
+                <span class="field-lbl">الحد الأدنى</span>
+                <input class="field-input" type="number" id="UI" placeholder="عدد الوحدات" min="1" inputmode="numeric" autofocus>
+              </div>
+            </div>
+            <div class="quick-section" style="border-bottom:none;">
+              <div class="quick-lbl">اختيار سريع</div>
+              <div class="quick-chips">
+                <button class="chip" onclick="setU(100,this)">100</button>
+                <button class="chip" onclick="setU(300,this)">300</button>
+                <button class="chip" onclick="setU(500,this)">500</button>
+                <button class="chip" onclick="setU(700,this)">700</button>
+                <button class="chip" onclick="setU(900,this)">900</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="charge-mode-section card-sect">
+            <div class="charge-mode-lbl">طريقة الشحن</div>
+            <div class="cm-btns">
+              <div class="cm-btn online sel" id="CM_ONLINE" onclick="setMode('online')">
+                <div class="cm-btn-icon">
+                  <svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                </div>
+                <strong>شحن أونلاين</strong>
+                <small>شحن تلقائي مباشر</small>
+              </div>
+              <div class="cm-btn dial" id="CM_DIAL" onclick="setMode('dial')">
+                <div class="cm-btn-icon">
+                  <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.24h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.09 6.09l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                </div>
+                <strong>شحن عادي</strong>
+                <small>عبر لوحة الاتصال</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="online-target-section open card-sect" id="OT_SECTION">
+            <div class="ot-lbl">شحن على رقم</div>
+            <div class="ot-btns">
+              <div class="ot-btn sel" id="OT_MINE" onclick="setTarget('mine')">رقمي</div>
+              <div class="ot-btn" id="OT_OTHER" onclick="setTarget('other')">رقم تاني</div>
+            </div>
+            <div class="other-num-form" id="OTHER_FORM">
+              <div class="ofield">
+                <div class="ofield-icon"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/></svg></div>
+                <input type="tel" id="OT_NUM" placeholder="رقم التاني 01XXXXXXXXX" inputmode="tel">
+              </div>
+              <div class="ofield">
+                <div class="ofield-icon"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+                <input type="password" id="OT_PASS" placeholder="باسورد الرقم التاني">
+              </div>
+            </div>
+          </div>
+
+          <div class="go-section">
+            <button class="btn-go" onclick="startApp()">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>ابدأ البحث</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CARDS SCREEN -->
+      <div id="CS">
+        <div class="surface cs-top">
+          <div class="cs-info">بحث عن <strong id="IU">—</strong></div>
+          <button class="cs-back" onclick="goBack()">
+            <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            تغيير
+          </button>
+        </div>
+        <div class="surface timer-wrap">
+          <div class="timer-header">
+            <div class="timer-left">
+              <div class="timer-dot"></div>
+              <span class="timer-text">جاري التحديث</span>
+            </div>
+            <span class="timer-count" id="TN">—</span>
+          </div>
+          <div class="timer-bar"><div class="timer-prog" id="TP" style="width:100%"></div></div>
+        </div>
+        <div class="surface tgl-row" onclick="document.getElementById('CC').click()">
+          <div class="tgl-txt">
+            <strong>استمرار البحث بعد الشحن</strong>
+            <small id="TH">مفعّل — يكمل البحث حتى بعد الشحن</small>
+          </div>
+          <div class="sw">
+            <input type="checkbox" id="CC" checked onchange="onTgl()">
+            <div class="sw-track"></div>
+          </div>
+        </div>
+        <div id="CP"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<nav class="bnav">
+  <a href="https://t.me/FY_TF" target="_blank">
+    <svg viewBox="0 0 24 24"><path d="M21.5 2.5L2.5 10.5l7 2.5 2.5 7 3-4.5 4.5 3.5 2-16z"/></svg>
+  </a>
+  <a href="https://wa.me/message/U6AIKBGFCNCQK1" target="_blank">
+    <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+  </a>
+  <a href="https://www.facebook.com/VI808IV" target="_blank">
+    <svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+  </a>
+</nav>
+
+<div class="toast" id="TOAST"></div>
+
+<script>
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function showToast(msg,type=''){
+  const t=document.getElementById('TOAST');
+  t.textContent=msg;t.className='toast show'+(type?' '+type:'');
+  clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2800);
+}
+function switchTab(tab){
+  document.getElementById('TAB_PASS').classList.toggle('active',tab==='password');
+  document.getElementById('TAB_DATA').classList.toggle('active',tab==='data');
+  document.getElementById('FORM_PASS').classList.toggle('visible',tab==='password');
+  document.getElementById('FORM_DATA').classList.toggle('visible',tab==='data');
+}
+document.querySelectorAll('form.form-section').forEach(f=>{
+  f.addEventListener('submit',function(){
+    const btn=this.querySelector('.btn-login');
+    if(btn){btn.classList.add('loading');btn.disabled=true;}
+  });
+});
+
+{% if is_logged_in %}
+const SECS=7;
+let units=0,chargeMode='online',targetMode='mine';
+let running=false,stop=false,ti=null,ct=null,charged=false;
+
+// Ping server every 60s to update active count
+setInterval(async()=>{
+  try{
+    const r=await fetch('/?ping=1&t='+Date.now());
+    const d=await r.json();
+    if(d.active_users!==undefined){
+      document.querySelectorAll('#ACTIVE_NUM,#PILL_CNT').forEach(el=>el.textContent=d.active_users);
+    }
+  }catch(e){}
+},60000);
+
+function onTgl(){
+  const on=document.getElementById('CC').checked;
+  document.getElementById('TH').textContent=on?'مفعّل — يكمل البحث حتى بعد الشحن':'معطّل — يتوقف بعد أول كارت مناسب';
+}
+function setU(n,b){
+  document.getElementById('UI').value=n;
+  document.querySelectorAll('.chip').forEach(x=>x.classList.remove('sel'));
+  b.classList.add('sel');
+}
+function setMode(mode){
+  chargeMode=mode;
+  document.getElementById('CM_ONLINE').classList.toggle('sel',mode==='online');
+  document.getElementById('CM_DIAL').classList.toggle('sel',mode==='dial');
+  document.getElementById('OT_SECTION').classList.toggle('open',mode==='online');
+}
+function setTarget(t){
+  targetMode=t;
+  document.getElementById('OT_MINE').classList.toggle('sel',t==='mine');
+  document.getElementById('OT_OTHER').classList.toggle('sel',t==='other');
+  document.getElementById('OTHER_FORM').classList.toggle('visible',t==='other');
+}
+function startApp(){
+  const v=parseInt(document.getElementById('UI').value)||0;
+  if(v<1){const inp=document.getElementById('UI');inp.focus();inp.closest('.field-row').style.background='rgba(230,0,0,.06)';setTimeout(()=>inp.closest('.field-row').style.background='',900);return;}
+  if(chargeMode==='online'&&targetMode==='other'){
+    const on=document.getElementById('OT_NUM').value.trim();
+    const op=document.getElementById('OT_PASS').value.trim();
+    if(!on||!op){showToast('ادخل رقم وباسورد الرقم التاني','err');return;}
+  }
+  units=v;stop=false;charged=false;
+  document.getElementById('IU').textContent=v+' وحدة';
+  document.getElementById('US').style.display='none';
+  document.getElementById('CS').style.display='flex';
+  runCycle();
+}
+function goBack(){
+  stop=true;clearInterval(ti);clearTimeout(ct);stopTimer();
+  document.getElementById('CS').style.display='none';
+  document.getElementById('US').style.display='flex';
+  document.getElementById('CP').innerHTML='';
+  running=false;
+}
+function startTimer(s){
+  return new Promise(res=>{
+    clearInterval(ti);let r=s;updTimer(r,s);
+    ti=setInterval(()=>{r--;updTimer(r,s);if(r<=0){clearInterval(ti);res();}},1000);
+    ct=setTimeout(res,s*1000+200);
+  });
+}
+function updTimer(r,t){
+  const n=document.getElementById('TN'),p=document.getElementById('TP');
+  if(!n||!p)return;
+  n.textContent=Math.max(r,0);p.style.width=Math.max(0,r/t*100)+'%';
+  n.classList.toggle('hot',r<=2);
+}
+function stopTimer(){
+  clearInterval(ti);
+  const n=document.getElementById('TN'),p=document.getElementById('TP');
+  if(n)n.textContent='—';if(p)p.style.width='0%';
+}
+async function fetchCards(){
+  try{
+    const r=await fetch('/?fetch=1&t='+Date.now());
+    const d=await r.json();
+    // update active count
+    if(d.active_users!==undefined){
+      document.querySelectorAll('#ACTIVE_NUM,#PILL_CNT').forEach(el=>el.textContent=d.active_users);
+    }
+    return d;
+  }catch{return{success:false,promos:[]};}
+}
+function findBest(promos){return promos.find(p=>parseInt(p.gift)>=units)||null;}
+async function doOnlineCharge(serial){
+  let url='/?redeem=1&serial='+encodeURIComponent(serial);
+  if(targetMode==='other'){
+    url+='&target='+encodeURIComponent(document.getElementById('OT_NUM').value.trim());
+    url+='&tpass='+encodeURIComponent(document.getElementById('OT_PASS').value.trim());
+  }
+  const btn=document.querySelector('.btn-online-charge[data-serial="'+serial+'"]');
+  if(btn)btn.classList.add('loading');
+  try{
+    const r=await fetch(url);const d=await r.json();
+    if(d.success){showToast('✅ تم شحن الكارت بنجاح','ok');charged=true;if(!document.getElementById('CC').checked){setTimeout(()=>goBack(),1500);}}
+    else{showToast('❌ فشل الشحن — حاول تاني','err');}
+  }catch{showToast('❌ خطأ في الاتصال','err');}
+  if(btn)btn.classList.remove('loading');
+}
+function renderCards(data){
+  const panel=document.getElementById('CP');
+  if(!data?.success||!data.promos?.length){
+    if(!panel.querySelector('.cards-list')){panel.innerHTML=`<div class="empty-wrap surface"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>لا يوجد كروت مناسبة الآن<br><small style="font-family:Cairo,sans-serif;font-size:.63rem;color:var(--ink3)">جاري البحث...</small></div>`;}
+    return false;
+  }
+  const best=findBest(data.promos);
+  let html='<div class="cards-list">';
+  data.promos.forEach((p,i)=>{
+    const isBest=best&&p.serial===best.serial;
+    const ussd='*858*'+p.serial.replace(/\s/g,'')+'#';
+    const tel='tel:'+encodeURIComponent(ussd);
+    html+=`<div class="pc${isBest?' best':''}" style="--i:${i}">
+      <div class="pc-bg"></div>
+      <div class="pc-inner">
+        ${isBest?'<div class="pc-badge">✦ أفضل كارت</div>':''}
+        <div class="pc-content">
+          <div class="pc-stats">
+            <div class="pc-stat"><div class="pc-stat-icon ic-amt"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M8 10h6a2 2 0 0 1 0 4H8"/></svg></div><span class="pc-stat-val">${esc(p.amount)}</span><span class="pc-stat-lbl">جنيه</span></div>
+            <div class="pc-stat"><div class="pc-stat-icon ic-gift"><svg viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg></div><span class="pc-stat-val">${esc(p.gift)}</span><span class="pc-stat-lbl">وحدة</span></div>
+            <div class="pc-stat"><div class="pc-stat-icon ic-rem"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><span class="pc-stat-val">${esc(p.remaining)}</span><span class="pc-stat-lbl">متبقي</span></div>
+          </div>
+          <div class="pc-serial-wrap">
+            <div class="pc-serial">
+              <span class="serial-num">${esc(p.serial)}</span>
+              <button class="serial-copy" data-serial="${esc(p.serial)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+            </div>
+          </div>
+          <div class="pc-action">
+            ${isBest&&chargeMode==='online'?`<button class="btn-online-charge" data-serial="${esc(p.serial)}" onclick="doOnlineCharge('${esc(p.serial)}')"><svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>شحن أونلاين</button>`:''}
+            ${isBest&&chargeMode==='dial'?`<a href="${tel}" class="btn-dial-link"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.24h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.09 6.09l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>اتصل للشحن</a>`:''}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  });
+  html+='</div>';
+  panel.innerHTML=html;
+  if(best&&chargeMode==='online'&&!charged){
+    const btn=document.querySelector('.btn-online-charge[data-serial="'+best.serial+'"]');
+    if(btn)setTimeout(()=>doOnlineCharge(best.serial),700);
+  }
+  if(best&&chargeMode==='dial'){
+    const link=document.querySelector('.btn-dial-link');
+    if(link&&!charged)setTimeout(()=>link.click(),600);
+  }
+  return !!best;
+}
+function showLoading(){
+  const panel=document.getElementById('CP');
+  if(!panel.querySelector('.cards-list')&&!panel.querySelector('.empty-wrap')){
+    panel.innerHTML=`<div class="loading-wrap surface" style="background:var(--l1);border-radius:var(--r);"><div class="spin"></div><div class="spin-lbl">جاري تحديث الكروت</div></div>`;
+  }
+}
+async function runCycle(){
+  if(running)return;running=true;
+  while(!stop){
+    showLoading();
+    const d=await fetchCards();
+    if(stop)break;
+    const found=renderCards(d);
+    if(found&&!document.getElementById('CC').checked){end();return;}
+    await startTimer(SECS);
+    if(stop)break;
+  }
+  end();
+}
+function end(){running=false;stopTimer();}
+document.addEventListener('click',e=>{
+  const btn=e.target.closest('.serial-copy');if(!btn)return;
+  const serial=btn.dataset.serial;
+  const flash=()=>{
+    btn.style.background='rgba(200,168,75,.2)';btn.style.borderColor='rgba(200,168,75,.55)';
+    btn.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f5d070" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
+    setTimeout(()=>{btn.style.background='';btn.style.borderColor='';btn.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(200,168,75,.4)" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;},1800);
+    showToast('تم نسخ الكود','ok');
+  };
+  if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(serial).then(flash).catch(()=>fallback());}
+  else{fallback();}
+  function fallback(){const ta=document.createElement('textarea');ta.value=serial;ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand('copy');}catch(ex){}document.body.removeChild(ta);flash();}
+});
+document.getElementById('UI')?.addEventListener('keydown',e=>{if(e.key==='Enter')startApp();});
+{% endif %}
+</script>
+</body>
+</html>"""
+
+if __name__ == '__main__':
+    import urllib3
+    urllib3.disable_warnings()
+    app.run(host='0.0.0.0', port=5000, debug=False)
