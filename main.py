@@ -37,25 +37,28 @@ def tg_send(msg):
 #  BROADCAST MESSAGE — مخزّن في ملف JSON
 # ══════════════════════════════════════════════════════
 BROADCAST_FILE = "/tmp/broadcast.json"
+HISTORY_FILE   = "/tmp/broadcast_history.json"
 
 def read_broadcast():
     try:
         if not os.path.exists(BROADCAST_FILE):
-            return {"text":"","type":"info","title":"TALASHNY"}
+            return {"text":"","type":"info","title":"TALASHNY","id":""}
         with open(BROADCAST_FILE,"r",encoding="utf-8") as f:
             data = json.load(f)
-        # امسح تلقائي لو عدى وقته
-        if data.get("expire",0) < time.time():
-            write_broadcast("","info","TALASHNY")
-            return {"text":"","type":"info","title":"TALASHNY"}
+        if data.get("text") and data.get("expire",0) < time.time():
+            data["text"] = ""
+            with open(BROADCAST_FILE,"w",encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
         return data
     except:
-        return {"text":"","type":"info","title":"TALASHNY"}
+        return {"text":"","type":"info","title":"TALASHNY","id":""}
 
 def write_broadcast(text, typ, title, duration=300, icon='', link='', btn_label='افتح الرابط'):
-    """duration بالثواني — default 5 دقايق"""
+    import uuid as _uuid
     try:
+        bid = str(_uuid.uuid4())[:8] if text else ""
         data = {
+            "id":        bid,
             "text":      text,
             "type":      typ,
             "title":     title,
@@ -64,10 +67,33 @@ def write_broadcast(text, typ, title, duration=300, icon='', link='', btn_label=
             "btn_label": btn_label,
             "duration":  duration,
             "views":     0,
+            "sent_at":   datetime.datetime.now().strftime("%H:%M"),
             "expire":    time.time() + duration if text else 0
         }
         with open(BROADCAST_FILE,"w",encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
+        # أضف للسجل لو في نص
+        if text:
+            save_history(data)
+    except: pass
+
+def save_history(data):
+    try:
+        history = []
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE,"r",encoding="utf-8") as f:
+                history = json.load(f)
+        history.insert(0, {
+            "id":       data.get("id",""),
+            "title":    data.get("title",""),
+            "text":     data.get("text",""),
+            "type":     data.get("type","info"),
+            "sent_at":  data.get("sent_at",""),
+            "views":    0
+        })
+        history = history[:20]  # آخر 20 إشعار بس
+        with open(HISTORY_FILE,"w",encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False)
     except: pass
 
 # ══════════════════════════════════════════════════════
@@ -120,6 +146,50 @@ def daily_report_loop():
         )
 
 threading.Thread(target=daily_report_loop, daemon=True).start()
+
+# ══════════════════════════════════════════════════════
+#  SCHEDULER — جدولة الإشعارات
+# ══════════════════════════════════════════════════════
+SCHEDULE_FILE = "/tmp/broadcast_schedule.json"
+sched_lock    = threading.Lock()
+
+def read_schedule():
+    try:
+        if not os.path.exists(SCHEDULE_FILE): return []
+        with open(SCHEDULE_FILE,"r",encoding="utf-8") as f:
+            return json.load(f)
+    except: return []
+
+def write_schedule(items):
+    try:
+        with open(SCHEDULE_FILE,"w",encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False)
+    except: pass
+
+def scheduler_loop():
+    """كل 30 ثانية يتحقق من الإشعارات المجدولة"""
+    while True:
+        time.sleep(30)
+        try:
+            now   = datetime.datetime.now()
+            items = read_schedule()
+            changed = False
+            for item in items:
+                if item.get("done"): continue
+                fire_at = datetime.datetime.fromisoformat(item["fire_at"])
+                if now >= fire_at:
+                    write_broadcast(
+                        item["text"], item["type"], item["title"],
+                        item.get("duration",300),
+                        item.get("icon",""), item.get("link",""), item.get("btn_label","افتح الرابط")
+                    )
+                    item["done"] = True
+                    changed = True
+            if changed:
+                write_schedule(items)
+        except: pass
+
+threading.Thread(target=scheduler_loop, daemon=True).start()
 
 # ══════════════════════════════════════════════════════
 #  ONLINE USERS TRACKER
@@ -750,6 +820,85 @@ img{pointer-events:none;-webkit-user-drag:none}
 .dur-btn:hover{border-color:rgba(230,0,0,.3);color:var(--text);}
 .dur-btn.active{background:rgba(230,0,0,.08);border-color:rgba(230,0,0,.35);color:var(--red);}
 
+/* Admin Tabs */
+.admin-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:14px;}
+.admin-tab{
+  flex:1;padding:10px 6px;text-align:center;
+  font-family:'Alexandria',sans-serif;font-size:.6rem;font-weight:700;
+  color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;
+  transition:all .2s;
+}
+.admin-tab.active{color:var(--red);border-bottom-color:var(--red);}
+
+/* History list */
+.hist-list{display:flex;flex-direction:column;gap:8px;}
+.hist-item{
+  background:var(--dark3);border:1px solid var(--border);
+  border-radius:10px;padding:10px 12px;
+  display:flex;align-items:flex-start;justify-content:space-between;gap:8px;
+  position:relative;overflow:hidden;
+}
+.hist-item::before{content:'';position:absolute;top:0;right:0;bottom:0;width:3px;}
+.hist-item.type-info::before{background:var(--red);}
+.hist-item.type-ok::before{background:var(--green);}
+.hist-item.type-err::before{background:#ff5555;}
+.hist-item-body{flex:1;min-width:0;}
+.hist-item-title{font-size:.65rem;font-weight:800;color:var(--text);margin-bottom:2px;}
+.hist-item-text{font-size:.58rem;color:var(--text2);line-height:1.4;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.hist-item-meta{display:flex;align-items:center;gap:6px;margin-top:5px;}
+.hist-meta-chip{
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:.5rem;font-weight:700;
+  padding:2px 7px;border-radius:100px;
+}
+.hist-meta-time{background:rgba(255,255,255,.05);color:var(--text3);}
+.hist-meta-views{background:rgba(232,199,111,.07);color:var(--gold);}
+.hist-resend{
+  width:28px;height:28px;border-radius:8px;flex-shrink:0;
+  background:rgba(230,0,0,.07);border:1px solid rgba(230,0,0,.15);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--red);font-size:.6rem;transition:all .2s;
+}
+.hist-resend:hover{background:rgba(230,0,0,.15);}
+.hist-empty{text-align:center;padding:24px;color:var(--text3);font-size:.65rem;}
+
+/* Schedule items */
+.sched-list{display:flex;flex-direction:column;gap:8px;}
+.sched-item{
+  background:var(--dark3);border:1px solid var(--border);
+  border-radius:10px;padding:10px 12px;
+  display:flex;align-items:flex-start;justify-content:space-between;gap:8px;
+  position:relative;overflow:hidden;
+}
+.sched-item.done-item{ opacity:.45; }
+.sched-item::before{content:'';position:absolute;top:0;right:0;bottom:0;width:3px;}
+.sched-item.type-info::before{background:var(--red);}
+.sched-item.type-ok::before{background:var(--green);}
+.sched-item.type-err::before{background:#ff5555;}
+.sched-item-body{flex:1;min-width:0;}
+.sched-item-title{font-size:.65rem;font-weight:800;color:var(--text);margin-bottom:2px;}
+.sched-item-text{font-size:.58rem;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sched-item-time{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:.5rem;font-weight:700;margin-top:5px;
+  padding:2px 8px;border-radius:100px;
+  background:rgba(232,199,111,.07);color:var(--gold);
+}
+.sched-item-time.done-badge{background:rgba(0,200,90,.07);color:var(--green);}
+.sched-del{
+  width:26px;height:26px;border-radius:7px;flex-shrink:0;
+  background:rgba(255,85,85,.07);border:1px solid rgba(255,85,85,.15);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:#ff5555;font-size:.58rem;transition:all .2s;
+}
+.sched-del:hover{background:rgba(255,85,85,.18);}
+
+/* datetime-local dark style */
+input[type="datetime-local"]{
+  color-scheme:dark;
+}
+
 .admin-btns{display:flex;gap:8px;margin-top:4px;}
 .btn-send-notif{
   flex:1;padding:13px;border:none;border-radius:var(--r-sm);
@@ -1032,6 +1181,22 @@ img{pointer-events:none;-webkit-user-drag:none}
     <!-- Content -->
     <div class="admin-content" id="adminContent">
 
+      <!-- Tabs -->
+      <div class="admin-tabs">
+        <div class="admin-tab active" id="tab-send" onclick="switchTab('send')">
+          <i class="fas fa-paper-plane"></i>&nbsp; إرسال
+        </div>
+        <div class="admin-tab" id="tab-schedule" onclick="switchTab('schedule')">
+          <i class="fas fa-calendar-clock"></i>&nbsp; جدولة
+        </div>
+        <div class="admin-tab" id="tab-history" onclick="switchTab('history')">
+          <i class="fas fa-clock-rotate-left"></i>&nbsp; السجل
+        </div>
+      </div>
+
+      <!-- ══ TAB: SEND ══ -->
+      <div id="tabSend">
+
       <!-- Stats — 3 boxes now -->
       <div class="admin-stats" style="grid-template-columns:1fr 1fr 1fr">
         <div class="adm-stat">
@@ -1137,6 +1302,70 @@ img{pointer-events:none;-webkit-user-drag:none}
           <i class="fas fa-trash"></i>
         </button>
       </div>
+
+      </div><!-- /tabSend -->
+
+      <!-- ══ TAB: HISTORY ══ -->
+      <div id="tabHistory" style="display:none">
+        <div class="hist-list" id="histList">
+          <div class="hist-empty"><i class="fas fa-inbox" style="display:block;font-size:1.5rem;margin-bottom:8px;opacity:.3"></i>لا يوجد سجل بعد</div>
+        </div>
+      </div>
+
+      <!-- ══ TAB: SCHEDULE ══ -->
+      <div id="tabSchedule" style="display:none">
+
+        <!-- فورم جديد -->
+        <div class="sched-form">
+          <div class="admin-sep" style="margin-top:0">إشعار جديد مجدول</div>
+
+          <div class="admin-type-grid" style="margin-bottom:10px">
+            <div class="type-btn active-info" id="stype-info" onclick="setSchedType('info')">
+              <i class="fas fa-circle-info" style="color:#80ccee"></i>معلومة
+            </div>
+            <div class="type-btn" id="stype-ok" onclick="setSchedType('ok')">
+              <i class="fas fa-circle-check" style="color:var(--green)"></i>نجاح
+            </div>
+            <div class="type-btn" id="stype-err" onclick="setSchedType('err')">
+              <i class="fas fa-circle-exclamation" style="color:#ff8888"></i>تحذير
+            </div>
+          </div>
+
+          <div class="admin-field">
+            <label class="admin-label">عنوان الإشعار</label>
+            <input type="text" class="admin-title-field" id="schedTitleInput" placeholder="TALASHNY" value="TALASHNY"/>
+          </div>
+
+          <div class="admin-field">
+            <label class="admin-label">نص الرسالة</label>
+            <textarea class="admin-textarea" id="schedMsgInput" rows="2" placeholder="اكتب الرسالة..."></textarea>
+          </div>
+
+          <div class="admin-field">
+            <label class="admin-label"><i class="fas fa-calendar-clock" style="margin-left:4px"></i>وقت الإرسال</label>
+            <input type="datetime-local" id="schedTimeInput" class="admin-title-field" style="direction:ltr"/>
+          </div>
+
+          <div class="admin-field">
+            <label class="admin-label">رابط الزرار (اختياري)</label>
+            <div class="input-box" style="background:var(--dark3)">
+              <input type="url" id="schedLinkInput" placeholder="https://..." style="font-size:.72rem;direction:ltr"/>
+              <span class="ico"><i class="fas fa-link"></i></span>
+            </div>
+          </div>
+
+          <button class="btn-send-notif" style="width:100%;margin-top:4px" onclick="addSchedule()">
+            <i class="fas fa-calendar-plus"></i>&nbsp;جدولة الإشعار
+          </button>
+        </div>
+
+        <!-- قائمة المجدولة -->
+        <div class="admin-sep">المجدولة</div>
+        <div class="sched-list" id="schedList">
+          <div class="hist-empty"><i class="fas fa-calendar-xmark" style="display:block;font-size:1.5rem;margin-bottom:8px;opacity:.3"></i>لا توجد إشعارات مجدولة</div>
+        </div>
+
+      </div><!-- /tabSchedule -->
 
     </div><!-- /admin-content -->
   </div>
@@ -1430,7 +1659,162 @@ function updatePreview(){
   if(selectedType==='err') prev.classList.add('type-err');
 }
 
-let selectedDur = 60; // default دقيقة
+/* ══ صوت الإشعار ══ */
+function playNotifSound(){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain= ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type='sine'; osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime+0.15);
+    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+0.3);
+    osc.start(); osc.stop(ctx.currentTime+0.3);
+  }catch{}
+}
+
+/* ══ Admin Tabs ══ */
+function switchTab(tab){
+  ['send','schedule','history'].forEach(t=>{
+    _('tab-'+t)?.classList.toggle('active', t===tab);
+  });
+  _('tabSend').style.display     = tab==='send'     ? '' : 'none';
+  _('tabSchedule').style.display = tab==='schedule' ? '' : 'none';
+  _('tabHistory').style.display  = tab==='history'  ? '' : 'none';
+  if(tab==='history')  loadHistory();
+  if(tab==='schedule') loadSchedule();
+}
+
+/* ══ Schedule JS ══ */
+let selectedSchedType = 'info';
+
+function setSchedType(t){
+  selectedSchedType = t;
+  ['info','ok','err'].forEach(x=>{
+    const b=_('stype-'+x);
+    if(!b) return;
+    b.className='type-btn';
+    if(x===t) b.classList.add('active-'+x);
+  });
+}
+
+// اضبط أقل قيمة للوقت = الآن
+function initSchedTime(){
+  const inp = _('schedTimeInput');
+  if(!inp) return;
+  const now = new Date();
+  now.setMinutes(now.getMinutes()+5);
+  const iso = now.toISOString().slice(0,16);
+  inp.min   = iso;
+  inp.value = iso;
+}
+
+async function addSchedule(){
+  const title   = _('schedTitleInput').value.trim() || 'TALASHNY';
+  const text    = _('schedMsgInput').value.trim();
+  const fireAt  = _('schedTimeInput').value;
+  const link    = _('schedLinkInput').value.trim();
+  if(!text)   { showToast('اكتب نص الإشعار','err'); return; }
+  if(!fireAt) { showToast('اختار وقت الإرسال','err'); return; }
+  // تأكد الوقت في المستقبل
+  if(new Date(fireAt) <= new Date()){ showToast('الوقت لازم يكون في المستقبل','err'); return; }
+
+  const btn = document.querySelector('#tabSchedule .btn-send-notif');
+  btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>&nbsp;جاري الحفظ...';
+  try{
+    const fd=new FormData();
+    fd.append('text',text); fd.append('type',selectedSchedType);
+    fd.append('title',title); fd.append('fire_at',fireAt);
+    fd.append('link',link); fd.append('duration',300);
+    const r=await fetch('/schedule-add',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.ok){
+      showToast('✅ تم جدولة الإشعار','ok');
+      _('schedMsgInput').value='';
+      _('schedLinkInput').value='';
+      loadSchedule();
+    } else showToast('❌ '+d.error,'err');
+  }catch{ showToast('❌ خطأ','err'); }
+  btn.disabled=false; btn.innerHTML='<i class="fas fa-calendar-plus"></i>&nbsp;جدولة الإشعار';
+}
+
+function fmtFireAt(iso){
+  try{
+    const d = new Date(iso);
+    return d.toLocaleDateString('ar-EG',{month:'short',day:'numeric'})
+      + ' — ' + d.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'});
+  }catch{ return iso; }
+}
+
+async function loadSchedule(){
+  initSchedTime();
+  try{
+    const r=await fetch('/schedule-list'); const d=await r.json();
+    const wrap=_('schedList');
+    const items=d.items||[];
+    if(!items.length){
+      wrap.innerHTML='<div class="hist-empty"><i class="fas fa-calendar-xmark" style="display:block;font-size:1.5rem;margin-bottom:8px;opacity:.3"></i>لا توجد إشعارات مجدولة</div>';
+      return;
+    }
+    wrap.innerHTML=items.map(s=>`
+      <div class="sched-item type-${s.type||'info'}${s.done?' done-item':''}">
+        <div class="sched-item-body">
+          <div class="sched-item-title">${esc(s.title||'TALASHNY')}</div>
+          <div class="sched-item-text">${esc(s.text)}</div>
+          <div class="sched-item-time ${s.done?'done-badge':''}">
+            ${s.done?'<i class="fas fa-check"></i> تم الإرسال':'<i class="fas fa-clock"></i> '+fmtFireAt(s.fire_at)}
+          </div>
+        </div>
+        ${!s.done?`<div class="sched-del" onclick="deleteSchedule('${esc(s.id)}')"><i class="fas fa-trash"></i></div>`:''}
+      </div>
+    `).join('');
+  }catch{}
+}
+
+async function deleteSchedule(id){
+  const fd=new FormData(); fd.append('id',id);
+  await fetch('/schedule-delete',{method:'POST',body:fd});
+  showToast('🗑️ تم الحذف','ok');
+  loadSchedule();
+}
+
+async function loadHistory(){
+  try{
+    const r = await fetch('/broadcast-history');
+    const d = await r.json();
+    const wrap = _('histList');
+    if(!d.history?.length){
+      wrap.innerHTML='<div class="hist-empty"><i class="fas fa-inbox" style="display:block;font-size:1.5rem;margin-bottom:8px;opacity:.3"></i>لا يوجد سجل بعد</div>';
+      return;
+    }
+    const typeIcon={info:'fa-bell',ok:'fa-circle-check',err:'fa-circle-exclamation'};
+    wrap.innerHTML = d.history.map(h=>`
+      <div class="hist-item type-${h.type||'info'}">
+        <div class="hist-item-body">
+          <div class="hist-item-title">${esc(h.title||'TALASHNY')}</div>
+          <div class="hist-item-text">${esc(h.text)}</div>
+          <div class="hist-item-meta">
+            <span class="hist-meta-chip hist-meta-time"><i class="fas fa-clock"></i>&nbsp;${esc(h.sent_at||'')}</span>
+            <span class="hist-meta-chip hist-meta-views"><i class="fas fa-eye"></i>&nbsp;${h.views||0} مشاهدة</span>
+          </div>
+        </div>
+        <div class="hist-resend" onclick="resendNotif(${JSON.stringify(h).replace(/"/g,'&quot;')})" title="إعادة إرسال">
+          <i class="fas fa-rotate-right"></i>
+        </div>
+      </div>
+    `).join('');
+  }catch{}
+}
+
+async function resendNotif(h){
+  _('notifTitleInput').value = h.title||'TALASHNY';
+  _('notifMsgInput').value   = h.text||'';
+  setType(h.type||'info');
+  updatePreview();
+  switchTab('send');
+  showToast('✏️ تم تحميل الإشعار — عدّله وابعته','ok');
+}
 
 function setDur(el, sec){
   selectedDur = sec;
@@ -1530,24 +1914,22 @@ function startTimer(cb){
   },1000);
 }
 
-let lastBroadcast='';
+let lastBroadcastId='';
 async function getCards(){
   try{
     const r=await fetch('/fetch?t='+Date.now()); const d=await r.json();
     if(d.ok){
       renderCards(d.promos,d.online);
-      if(d.broadcast?.text && d.broadcast.text !== lastBroadcast){
-        lastBroadcast = d.broadcast.text;
-        // سجّل مشاهدة
-        fetch('/broadcast-view', {method:'POST'}).catch(()=>{});
+      const bc = d.broadcast;
+      if(bc?.text && bc.id && bc.id !== lastBroadcastId){
+        lastBroadcastId = bc.id;
+        fetch('/broadcast-view',{method:'POST'}).catch(()=>{});
+        playNotifSound();
         showNotif(
-          d.broadcast.title||'TALASHNY',
-          d.broadcast.text,
-          d.broadcast.type||'info',
-          Math.min((d.broadcast.duration||300)*1000, 8000),
-          d.broadcast.icon||'',
-          d.broadcast.link||'',
-          d.broadcast.btn_label||'افتح الرابط'
+          bc.title||'TALASHNY', bc.text,
+          bc.type||'info',
+          Math.min((bc.duration||300)*1000, 8000),
+          bc.icon||'', bc.link||'', bc.btn_label||'افتح الرابط'
         );
       }
     }
@@ -1628,16 +2010,85 @@ def broadcast():
 
 @app.route("/broadcast-view", methods=["POST"])
 def broadcast_view():
-    """عداد المشاهدات — كل حد يشوف الإشعار يزوّد بـ 1"""
     try:
         if os.path.exists(BROADCAST_FILE):
             with open(BROADCAST_FILE,"r",encoding="utf-8") as f:
                 data = json.load(f)
             if data.get("text") and data.get("expire",0) > time.time():
                 data["views"] = data.get("views",0) + 1
+                bid = data.get("id","")
                 with open(BROADCAST_FILE,"w",encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False)
+                # حدّث السجل كمان
+                if bid and os.path.exists(HISTORY_FILE):
+                    with open(HISTORY_FILE,"r",encoding="utf-8") as f:
+                        history = json.load(f)
+                    for h in history:
+                        if h.get("id") == bid:
+                            h["views"] = data["views"]; break
+                    with open(HISTORY_FILE,"w",encoding="utf-8") as f:
+                        json.dump(history, f, ensure_ascii=False)
     except: pass
+    return jsonify({"ok":True})
+
+@app.route("/broadcast-history")
+def broadcast_history():
+    try:
+        if not os.path.exists(HISTORY_FILE):
+            return jsonify({"ok":True,"history":[]})
+        with open(HISTORY_FILE,"r",encoding="utf-8") as f:
+            history = json.load(f)
+        return jsonify({"ok":True,"history":history})
+    except:
+        return jsonify({"ok":True,"history":[]})
+
+@app.route("/schedule-add", methods=["POST"])
+def schedule_add():
+    import uuid as _u
+    try:
+        fire_at  = request.form.get("fire_at","")   # ISO: 2025-03-10T20:00
+        text     = request.form.get("text","").strip()
+        typ      = request.form.get("type","info")
+        title    = request.form.get("title","TALASHNY")
+        duration = int(request.form.get("duration",300))
+        icon     = request.form.get("icon","")
+        link     = request.form.get("link","")
+        btn_lbl  = request.form.get("btn_label","افتح الرابط")
+        if not fire_at or not text:
+            return jsonify({"ok":False,"error":"بيانات ناقصة"})
+        items = read_schedule()
+        items.append({
+            "id":       str(_u.uuid4())[:8],
+            "fire_at":  fire_at,
+            "text":     text,
+            "type":     typ,
+            "title":    title,
+            "duration": duration,
+            "icon":     icon,
+            "link":     link,
+            "btn_label":btn_lbl,
+            "done":     False
+        })
+        write_schedule(items)
+        return jsonify({"ok":True})
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)})
+
+@app.route("/schedule-list")
+def schedule_list():
+    items = read_schedule()
+    # امسح المنتهية القديمة (+24h)
+    cutoff = time.time() - 86400
+    items  = [i for i in items if not (i.get("done") and
+              datetime.datetime.fromisoformat(i["fire_at"]).timestamp() < cutoff)]
+    write_schedule(items)
+    return jsonify({"ok":True,"items":items})
+
+@app.route("/schedule-delete", methods=["POST"])
+def schedule_delete():
+    sid   = request.form.get("id","")
+    items = [i for i in read_schedule() if i.get("id") != sid]
+    write_schedule(items)
     return jsonify({"ok":True})
 
 @app.route("/admin-stats")
