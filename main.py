@@ -52,8 +52,8 @@ def pw_login(num, pw):
         return r.json()
     except: return {}
 
-# نفس كود السكريبت بالظبط - step1 GET بدون JSON
 def data_login():
+    # Step 1: GET seamless auth - كشف الرقم من الشبكة
     url = "http://mobile.vodafone.com.eg/checkSeamless/realms/vf-realm/protocol/openid-connect/auth"
     params = {'client_id': "cash-app"}
     headers = {
@@ -72,13 +72,17 @@ def data_login():
     try:
         response = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
         resp_json = response.json()
-        nuber = resp_json['msisdn']
-        number = f"0{nuber}"
-        fox = resp_json["seamlessToken"]
-    except:
-        return {"error": "تأكد إن الداتا شغالة على خط فودافون مش واي فاي"}
+        nuber = resp_json.get('msisdn') or resp_json.get('MSISDN') or resp_json.get('phoneNumber')
+        if not nuber:
+            return {"error": "تأكد إن الداتا شغالة على خط فودافون مش واي فاي"}
+        number = f"0{nuber}" if not str(nuber).startswith('0') else str(nuber)
+        fox = resp_json.get("seamlessToken") or resp_json.get("token") or resp_json.get("access_token")
+        if not fox:
+            return {"error": "مش قادر يجيب الـ token من الشبكة — تأكد من الداتا"}
+    except Exception as e:
+        return {"error": f"تأكد إن الداتا شغالة على خط فودافون مش واي فاي"}
 
-    # step2 - نفس السكريبت بالظبط
+    # Step 2: Token exchange
     url2 = "https://mobile.vodafone.com.eg/auth/realms/vf-realm/protocol/openid-connect/token"
     payload2 = {
         'grant_type': "password",
@@ -107,8 +111,10 @@ def data_login():
         d = response2.json()
         if d.get('access_token'):
             d['_number'] = number
+        elif d.get('error'):
+            return {"error": f"فشل تبادل الـ token: {d.get('error_description', d.get('error'))}"}
         return d
-    except:
+    except Exception as e:
         return {"error": "فشل تبادل الـ token"}
 
 def get_promos(tok, num):
@@ -198,7 +204,6 @@ def index():
         return jsonify({'active_users': count()})
     if request.args.get('fetch') and session.get('logged_in'):
         touch(session.get('number',''))
-        # refresh token if expired
         if time.time() >= session.get('token_exp', 0):
             if session.get('login_method') == 'data':
                 res = data_login()
@@ -282,9 +287,8 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   border-bottom:1px solid rgba(200,168,75,.12);
   box-shadow:0 4px 30px rgba(0,0,0,.8);
   display:flex;align-items:center;
-  padding:0 18px;
+  padding:0 18px;gap:10px;
 }
-/* خط ذهبي رفيع تحت البانر */
 .banner::after{
   content:'';position:absolute;bottom:-1.5px;left:12%;right:12%;height:1.5px;
   background:linear-gradient(90deg,transparent,var(--g3) 25%,var(--g2) 50%,var(--g3) 75%,transparent);
@@ -301,13 +305,13 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 }
 @keyframes chrome{0%{background-position:300% center}100%{background-position:-300% center}}
 
-/* عداد المتصلين — يمين البانر */
+/* عداد المتصلين في البانر — يسار بجانب الاسم */
 .bonline{
   display:flex;align-items:center;gap:5px;
   background:rgba(76,255,154,.05);
   border:1px solid rgba(76,255,154,.13);
   border-radius:18px;padding:4px 10px 4px 8px;
-  flex-shrink:0;
+  flex-shrink:0;order:-1;
 }
 .bonline .dot{width:5px;height:5px;border-radius:50%;background:#4cff9a;
   box-shadow:0 0 5px #4cff9a;animation:blink 2s ease-in-out infinite;}
@@ -402,7 +406,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .ul{display:flex;align-items:center;gap:6px;}
 .udot{width:5px;height:5px;border-radius:50%;background:var(--g2);}
 .unum{font-family:'JetBrains Mono',monospace;font-size:.74rem;font-weight:700;color:var(--g2);}
-/* online pill داخل userbar */
 .upill{display:flex;align-items:center;gap:4px;
   background:rgba(76,255,154,.05);border:1px solid rgba(76,255,154,.12);
   border-radius:16px;padding:3px 8px;}
@@ -542,73 +545,137 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .sw input:checked+.sw-t{background:linear-gradient(135deg,var(--g3),var(--g1));border-color:rgba(200,168,75,.25);}
 .sw input:checked+.sw-t::before{transform:translateX(-16px);background:#fff;}
 
-/* ── CARDS ── */
+/* ══════════════════════════════════════════
+   كروت جديدة — تصميم horizontal مختلف
+   ══════════════════════════════════════════ */
 .cl{display:flex;flex-direction:column;gap:8px;}
 
-/* كارت بسيط ونظيف */
 .pc{
   border-radius:var(--r);
   background:var(--l1);
-  border:1px solid var(--st);
+  border:1px solid rgba(255,255,255,.05);
   overflow:hidden;
   position:relative;
   animation:cardIn .35s var(--sp) both;
-  animation-delay:calc(var(--i,0)*.05s);
+  animation-delay:calc(var(--i,0)*.06s);
+  transition:transform .2s var(--sp),box-shadow .2s;
 }
-@keyframes cardIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.pc:active{transform:scale(.99);}
+
+@keyframes cardIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+
+/* الشريط الجانبي الملون */
+.pc-stripe{
+  position:absolute;right:0;top:0;bottom:0;width:3px;
+  background:linear-gradient(180deg,transparent,var(--g3) 30%,var(--g2) 60%,transparent);
+  opacity:.5;
+}
+.pc.best .pc-stripe{opacity:1;width:4px;}
 
 /* كارت الأفضل */
-.pc.best{border-color:rgba(200,168,75,.45);}
-.pc.best::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,transparent 5%,var(--g3) 20%,var(--g2) 50%,var(--g3) 80%,transparent 95%);
+.pc.best{
+  background:linear-gradient(135deg,#0d0d12 0%,rgba(200,168,75,.04) 100%);
+  border-color:rgba(200,168,75,.25);
+  box-shadow:0 2px 20px rgba(200,168,75,.06);
+}
+/* خط ذهبي علوي للأفضل */
+.pc.best::after{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent 5%,rgba(200,168,75,.5) 40%,rgba(245,208,112,.7) 60%,rgba(200,168,75,.5) 80%,transparent 95%);
 }
 
-/* هيدر الكارت */
-.pch{
+/* الجزء العلوي: سيريال + بادجات */
+.pc-top{
   display:flex;align-items:center;justify-content:space-between;
-  padding:9px 12px 7px;
-  border-bottom:1px solid var(--st);
-  background:var(--l2);
+  padding:9px 14px 0;
 }
-.pch-r{display:flex;align-items:center;gap:6px;}
-.best-tag{font-size:.48rem;font-weight:900;letter-spacing:1px;text-transform:uppercase;
-  color:#1a0e00;background:linear-gradient(135deg,var(--g2),var(--g1));
-  padding:2px 7px;border-radius:4px;}
-.pc-rank{font-family:'JetBrains Mono',monospace;font-size:.58rem;color:var(--ink3);font-weight:700;}
+.pc-serial{
+  font-family:'JetBrains Mono',monospace;
+  font-size:.98rem;font-weight:700;
+  color:var(--ink);letter-spacing:2px;
+}
+.pc-badges{display:flex;align-items:center;gap:5px;}
+.badge-best{
+  font-size:.45rem;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;
+  color:#0a0600;
+  background:linear-gradient(135deg,var(--g1),var(--g2));
+  padding:2px 7px;border-radius:4px;
+}
+.badge-rank{
+  font-family:'JetBrains Mono',monospace;font-size:.55rem;font-weight:700;
+  color:var(--ink3);background:var(--l3);
+  border:1px solid var(--st);padding:2px 6px;border-radius:4px;
+}
 
-/* stats row */
-.pcs{display:flex;align-items:center;padding:8px 12px;gap:0;}
-.stat{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;}
-.stat:not(:last-child){border-left:1px solid rgba(255,255,255,.05);}
-.sv{font-family:'JetBrains Mono',monospace;font-size:.95rem;font-weight:700;color:var(--ink);}
-.sv.gold{color:var(--g2);}
-.sv.red{color:#ff8a80;}
-.sv.blue{color:#82b1ff;}
-.sl{font-size:.46rem;color:var(--ink3);margin-top:1px;}
+/* الوسط: 3 أعمدة Stats */
+.pc-stats{
+  display:flex;align-items:stretch;
+  padding:8px 14px 0;
+  gap:0;
+}
+.pstat{
+  flex:1;display:flex;flex-direction:column;align-items:center;
+  padding:8px 4px;
+  position:relative;
+}
+.pstat:not(:last-child)::after{
+  content:'';position:absolute;left:0;top:20%;bottom:20%;width:1px;
+  background:linear-gradient(180deg,transparent,rgba(255,255,255,.06),transparent);
+}
+.pstat-val{
+  font-family:'JetBrains Mono',monospace;
+  font-size:1.15rem;font-weight:700;
+  line-height:1;margin-bottom:3px;
+}
+.pstat-val.v-gold{color:var(--g2);}
+.pstat-val.v-red{color:#ff7070;}
+.pstat-val.v-blue{color:#7eb3ff;}
+.pstat-lbl{
+  font-size:.42rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--ink3);
+}
 
-/* serial */
-.pcs2{padding:7px 12px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px;border-top:1px solid var(--st);}
-.sn{font-family:'JetBrains Mono',monospace;font-size:.88rem;font-weight:700;color:var(--ink);letter-spacing:1.5px;}
-.sr{display:flex;align-items:center;gap:5px;}
-.scopy{width:26px;height:26px;border-radius:6px;border:1px solid var(--st);background:var(--l3);
-  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .18s var(--sp);}
-.scopy svg{width:10px;height:10px;stroke:var(--ink3);stroke-width:2;fill:none;}
-.scopy:hover{background:rgba(200,168,75,.1);border-color:rgba(200,168,75,.3);}
-.scopy:active{transform:scale(.85);}
-.bcharge{display:inline-flex;align-items:center;gap:4px;padding:5px 11px;
-  background:rgba(230,0,0,.08);border:1px solid rgba(230,0,0,.2);border-radius:14px;
-  font-family:'Cairo',sans-serif;font-size:.66rem;font-weight:700;color:#ff8a80;
-  cursor:pointer;transition:all .18s var(--sp);}
-.bcharge svg{width:9px;height:9px;stroke:currentColor;stroke-width:2;fill:none;}
-.bcharge:hover{background:rgba(230,0,0,.14);}
-.bcharge.loading{opacity:.5;pointer-events:none;}
-.bdial{display:inline-flex;align-items:center;gap:4px;text-decoration:none;
-  color:rgba(200,168,75,.5);font-size:.66rem;font-weight:700;
-  padding:5px 11px;border:1px solid rgba(200,168,75,.1);border-radius:14px;
-  background:rgba(200,168,75,.04);transition:all .18s;}
-.bdial svg{width:9px;height:9px;stroke:currentColor;stroke-width:2;fill:none;}
-.bdial:hover{color:rgba(200,168,75,.8);}
+/* الجزء السفلي: أزرار */
+.pc-actions{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 12px 9px;
+  border-top:1px solid rgba(255,255,255,.04);
+  margin-top:6px;
+}
+.pc-copy{
+  display:flex;align-items:center;gap:4px;
+  padding:5px 10px;
+  background:var(--l3);border:1px solid var(--st);border-radius:var(--rs);
+  font-size:.6rem;font-weight:700;color:var(--ink3);
+  cursor:pointer;transition:all .18s var(--sp);
+}
+.pc-copy svg{width:9px;height:9px;stroke:currentColor;stroke-width:2;fill:none;}
+.pc-copy:hover{color:var(--g2);border-color:rgba(200,168,75,.3);}
+.pc-copy:active{transform:scale(.9);}
+
+.bcharge{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:6px 14px;
+  background:linear-gradient(135deg,rgba(230,0,0,.15),rgba(230,0,0,.08));
+  border:1px solid rgba(230,0,0,.3);border-radius:14px;
+  font-family:'Cairo',sans-serif;font-size:.68rem;font-weight:700;color:#ff8a80;
+  cursor:pointer;transition:all .2s var(--sp);
+}
+.bcharge svg{width:10px;height:10px;stroke:currentColor;stroke-width:2;fill:none;}
+.bcharge:hover{background:rgba(230,0,0,.22);box-shadow:0 2px 12px rgba(230,0,0,.2);}
+.bcharge:active{transform:scale(.94);}
+.bcharge.loading{opacity:.4;pointer-events:none;}
+
+.bdial{
+  display:inline-flex;align-items:center;gap:5px;text-decoration:none;
+  padding:6px 14px;
+  background:rgba(200,168,75,.07);
+  border:1px solid rgba(200,168,75,.2);border-radius:14px;
+  font-family:'Cairo',sans-serif;font-size:.68rem;font-weight:700;color:rgba(200,168,75,.7);
+  transition:all .2s;
+}
+.bdial svg{width:10px;height:10px;stroke:currentColor;stroke-width:2;fill:none;}
+.bdial:hover{background:rgba(200,168,75,.13);color:var(--g2);}
 
 /* loading/empty */
 .ls{display:flex;flex-direction:column;align-items:center;gap:8px;
@@ -646,11 +713,6 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 <!-- BANNER -->
 <div class="banner">
-  <div class="btitle">
-    <span style="--i:0">Y</span><span style="--i:1">N</span><span style="--i:2">H</span>
-    <span style="--i:3">S</span><span style="--i:4">A</span><span style="--i:5">L</span>
-    <span style="--i:6">A</span><span style="--i:7">T</span>
-  </div>
   {% if is_logged_in %}
   <div class="bonline">
     <div class="dot"></div>
@@ -658,6 +720,11 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     <span class="lbl">متصل</span>
   </div>
   {% endif %}
+  <div class="btitle">
+    <span style="--i:0">Y</span><span style="--i:1">N</span><span style="--i:2">H</span>
+    <span style="--i:3">S</span><span style="--i:4">A</span><span style="--i:5">L</span>
+    <span style="--i:6">A</span><span style="--i:7">T</span>
+  </div>
 </div>
 
 {% if not is_logged_in %}
@@ -820,7 +887,6 @@ document.querySelectorAll('form.fs').forEach(f=>{
 const SECS=7;
 let units=0,mode='online',tg='mine',running=false,stopped=false,ti=null,ct=null,charged=false;
 
-// ping every 60s
 setInterval(async()=>{try{const d=await(await fetch('/?ping=1&_='+Date.now())).json();if(d.active_users!=null)updOn(d.active_users);}catch(e){}},60000);
 function updOn(n){['BN','UON'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=n;});}
 
@@ -875,24 +941,35 @@ function renderCards(data){
     const iB=b&&p.serial===b.serial;
     const tel='tel:'+encodeURIComponent('*858*'+p.serial+'#');
     h+=`<div class="pc${iB?' best':''}" style="--i:${i}">
-      <div class="pch">
-        <div class="pch-r">
-          ${iB?'<span class="best-tag">✦ أفضل</span>':''}
-          <span class="pc-rank">#${i+1}</span>
-        </div>
-        <div class="sr">
-          ${iB&&mode==='online'?`<button class="bcharge" data-s="${esc(p.serial)}" onclick="doCharge('${esc(p.serial)}')"><svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>شحن</button>`:''}
-          ${iB&&mode==='dial'?`<a href="${tel}" class="bdial"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.24h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.09 6.09l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>اتصال</a>`:''}
+      <div class="pc-stripe"></div>
+      <div class="pc-top">
+        <span class="pc-serial">${esc(p.serial)}</span>
+        <div class="pc-badges">
+          ${iB?'<span class="badge-best">✦ أفضل</span>':''}
+          <span class="badge-rank">#${i+1}</span>
         </div>
       </div>
-      <div class="pcs">
-        <div class="stat"><span class="sv gold">${esc(p.gift)}</span><span class="sl">وحدة</span></div>
-        <div class="stat"><span class="sv red">${esc(p.amount)}</span><span class="sl">جنيه</span></div>
-        <div class="stat"><span class="sv blue">${esc(p.remaining)}</span><span class="sl">متبقي</span></div>
+      <div class="pc-stats">
+        <div class="pstat">
+          <span class="pstat-val v-gold">${esc(p.gift)}</span>
+          <span class="pstat-lbl">وحدة</span>
+        </div>
+        <div class="pstat">
+          <span class="pstat-val v-red">${esc(p.amount)}</span>
+          <span class="pstat-lbl">جنيه</span>
+        </div>
+        <div class="pstat">
+          <span class="pstat-val v-blue">${esc(p.remaining)}</span>
+          <span class="pstat-lbl">متبقي</span>
+        </div>
       </div>
-      <div class="pcs2">
-        <span class="sn">${esc(p.serial)}</span>
-        <button class="scopy" data-s="${esc(p.serial)}"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      <div class="pc-actions">
+        <button class="pc-copy" data-s="${esc(p.serial)}">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          نسخ
+        </button>
+        ${iB&&mode==='online'?`<button class="bcharge" data-s="${esc(p.serial)}" onclick="doCharge('${esc(p.serial)}')"><svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>شحن تلقائي</button>`:''}
+        ${iB&&mode==='dial'?`<a href="${tel}" class="bdial"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.24h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.09 6.09l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>اتصال</a>`:''}
       </div>
     </div>`;
   });
@@ -904,15 +981,15 @@ function renderCards(data){
 function showLoad(){const p=document.getElementById('CP');if(!p.querySelector('.cl')&&!p.querySelector('.es'))p.innerHTML='<div class="ls"><div class="spinner"></div><div class="slbl">جاري تحديث الكروت</div></div>';}
 async function run(){if(running)return;running=true;while(!stopped){showLoad();const d=await fetchC();if(stopped)break;const f=renderCards(d);if(f&&!document.getElementById('CC').checked){running=false;stopT();return;}await startTimer(SECS);if(stopped)break;}running=false;stopT();}
 
-// copy
+// copy — يشتغل لكل الكروت مش بس الأفضل
 document.addEventListener('click',e=>{
-  const btn=e.target.closest('.scopy');if(!btn)return;const s=btn.dataset.s;
+  const btn=e.target.closest('.pc-copy');if(!btn)return;const s=btn.dataset.s;
   const flash=()=>{
     const orig=btn.innerHTML;
-    btn.style.background='rgba(200,168,75,.15)';
-    btn.innerHTML='<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--g2)" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>';
-    setTimeout(()=>{btn.style.background='';btn.innerHTML=orig;},1600);
-    toast('تم النسخ','ok');
+    btn.style.borderColor='rgba(200,168,75,.4)';btn.style.color='var(--g2)';
+    btn.innerHTML='<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--g2)" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> تم';
+    setTimeout(()=>{btn.style.borderColor='';btn.style.color='';btn.innerHTML=orig;},1600);
+    toast('تم النسخ ✓','ok');
   };
   if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(s).then(flash).catch(()=>{fb(s,flash);});
   else fb(s,flash);
