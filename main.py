@@ -166,29 +166,40 @@ def write_schedule(items):
             json.dump(items, f, ensure_ascii=False)
     except: pass
 
+def check_schedule_and_fire():
+    """يتحقق من الجدولة — بيتستدعى مع كل /fetch"""
+    try:
+        now_ts  = time.time()
+        items   = read_schedule()
+        if not items: return
+        changed = False
+        for item in items:
+            if item.get("done"): continue
+            try:
+                fire_ts = float(item.get("fire_at_ts", 0))
+            except (ValueError, TypeError):
+                fire_ts = 0
+            if fire_ts > 0 and now_ts >= fire_ts:
+                write_broadcast(
+                    item.get("text",""), item.get("type","info"),
+                    item.get("title","TALASHNY"),
+                    int(item.get("duration", 300)),
+                    item.get("icon",""), item.get("link",""),
+                    item.get("btn_label","افتح الرابط")
+                )
+                item["done"]    = True
+                item["done_at"] = now_ts
+                changed = True
+        if changed:
+            write_schedule(items)
+    except Exception:
+        pass
+
 def scheduler_loop():
-    """كل 30 ثانية يتحقق من الإشعارات المجدولة"""
+    """كل 15 ثانية يتحقق من الإشعارات المجدولة"""
     while True:
-        time.sleep(30)
-        try:
-            now_ts = time.time()
-            items  = read_schedule()
-            changed = False
-            for item in items:
-                if item.get("done"): continue
-                # fire_at_ts مخزون كـ unix timestamp
-                if now_ts >= item.get("fire_at_ts", 0):
-                    write_broadcast(
-                        item["text"], item["type"], item["title"],
-                        item.get("duration", 300),
-                        item.get("icon",""), item.get("link",""),
-                        item.get("btn_label","افتح الرابط")
-                    )
-                    item["done"] = True
-                    changed = True
-            if changed:
-                write_schedule(items)
-        except: pass
+        time.sleep(15)
+        check_schedule_and_fire()
 
 threading.Thread(target=scheduler_loop, daemon=True).start()
 
@@ -312,13 +323,28 @@ html,body{width:100%;height:100%;overflow:hidden}
 body{font-family:'Alexandria',sans-serif;background:var(--dark);color:var(--text)}
 img{pointer-events:none;-webkit-user-drag:none}
 
+/* ══ حماية النسخ ══ */
+*{
+  -webkit-user-select:none;
+  -moz-user-select:none;
+  user-select:none;
+}
+input, textarea{
+  -webkit-user-select:text;
+  user-select:text;
+}
+
 .screen{
   position:fixed;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;
-  background:var(--dark);opacity:0;pointer-events:none;
-  z-index:10;overflow:hidden;transition:opacity .35s ease;
+  background:var(--dark);
+  opacity:0;pointer-events:none;
+  z-index:10;overflow:hidden;
+  transition:opacity .38s ease;
 }
-.screen.active{opacity:1;pointer-events:all;z-index:20;}
+.screen.active{
+  opacity:1;pointer-events:all;z-index:20;
+}
 
 /* ════════ SPLASH ════════ */
 #s-splash{background:#0a0a0a;z-index:50;}
@@ -514,12 +540,13 @@ img{pointer-events:none;-webkit-user-drag:none}
 .promo-card{
   background:var(--dark2);border:1px solid var(--border);
   border-radius:var(--r);margin-bottom:9px;overflow:hidden;
-  animation:cardIn .35s cubic-bezier(.34,1.3,.64,1) both;
-  animation-delay:calc(var(--i,0)*.06s);
-  transition:border-color .2s,transform .18s;
+  animation:cardIn .4s cubic-bezier(.34,1.2,.64,1) both;
+  animation-delay:calc(var(--i,0)*.07s);
+  transition:border-color .2s,transform .2s,box-shadow .2s;
+  will-change:transform;
 }
-.promo-card:hover{border-color:rgba(230,0,0,.2);transform:translateY(-1px);}
-@keyframes cardIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.promo-card:active{transform:scale(.98);box-shadow:0 2px 8px rgba(0,0,0,.4);}
+@keyframes cardIn{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
 .card-stripe{height:3px;background:linear-gradient(90deg,var(--red),rgba(230,0,0,.2),transparent);}
 .card-body{display:flex;align-items:stretch;padding:13px 13px 0;}
 .card-amount{
@@ -1406,11 +1433,32 @@ function showToast(msg,t=''){
 }
 
 /* ── SWITCH ── */
-function goTo(id){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  _(id).classList.add('active');
-  if(id==='s-app') _(id).scrollTop=0;
+function goTo(newId){
+  const screens = document.querySelectorAll('.screen');
+  screens.forEach(s=>{
+    if(s.id===newId){
+      s.classList.add('active');
+    } else {
+      s.classList.remove('active');
+    }
+  });
+  if(newId==='s-app') _(newId).scrollTop=0;
 }
+
+/* ── حماية النسخ والسياق ── */
+document.addEventListener('contextmenu', e=>e.preventDefault());
+document.addEventListener('copy',   e=>e.preventDefault());
+document.addEventListener('cut',    e=>e.preventDefault());
+document.addEventListener('dragstart', e=>e.preventDefault());
+// حماية long-press على موبايل
+document.addEventListener('touchstart', e=>{
+  if(e.target.tagName!=='INPUT' && e.target.tagName!=='TEXTAREA' && e.target.tagName!=='A'){
+    e.target._lpTimer = setTimeout(()=>e.preventDefault(), 500);
+  }
+},{passive:true});
+document.addEventListener('touchend', e=>{
+  clearTimeout(e.target._lpTimer);
+},{passive:true});
 
 let timerInt=null, pingInt=null;
 function startPing(){ fetch('/ping'); clearInterval(pingInt); pingInt=setInterval(()=>fetch('/ping'),15000); }
@@ -1443,7 +1491,12 @@ async function doLogin(){
   try{
     const fd=new FormData(); fd.append('number',num); fd.append('password',pw);
     const r=await fetch('/login',{method:'POST',body:fd}); const d=await r.json();
-    if(d.ok){ _('topNum').textContent=d.number; goTo('s-app'); startPing(); startCycle(); }
+    if(d.ok){
+      _('topNum').textContent=d.number;
+      // vibrate خفيف لو متاح
+      navigator.vibrate && navigator.vibrate(30);
+      goTo('s-app'); startPing(); startCycle();
+    }
     else{ _('errMsg').textContent=d.error||'الرقم أو الباسورد غلط'; _('errBox').style.display='flex'; }
   }catch{ _('errMsg').textContent='خطأ في الاتصال — تحقق من النت'; _('errBox').style.display='flex'; }
   btn.disabled=false; btn.innerHTML='<i class="fas fa-right-to-bracket"></i>&nbsp; دخول';
@@ -1738,39 +1791,44 @@ async function addSchedule(){
   if(!text)   { showToast('اكتب نص الإشعار','err'); return; }
   if(!fireVal){ showToast('اختار وقت الإرسال','err'); return; }
 
-  const fireDate = new Date(fireVal);
-  const fireTs   = fireDate.getTime() / 1000; // unix timestamp
-  if(fireTs <= Date.now()/1000){ showToast('الوقت لازم يكون في المستقبل','err'); return; }
+  const fireDate  = new Date(fireVal);
+  const fireTs    = Math.floor(fireDate.getTime() / 1000);
+  const nowTs     = Math.floor(Date.now() / 1000);
+  if(fireTs <= nowTs){ showToast('الوقت لازم يكون في المستقبل','err'); return; }
 
-  // تنسيق وقت للعرض
   const fireDisplay = fireDate.toLocaleDateString('ar-EG',{month:'short',day:'numeric'})
                     + ' ' + fireDate.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'});
 
   const btn = document.querySelector('#tabSchedule .btn-send-notif');
   if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>&nbsp;جاري الحفظ...'; }
   try{
-    const fd=new FormData();
-    fd.append('text',text); fd.append('type',selectedSchedType);
-    fd.append('title',title); fd.append('fire_at',fireDisplay);
-    fd.append('fire_at_ts', fireTs.toString());
-    fd.append('link',link); fd.append('duration',300);
-    const r=await fetch('/schedule-add',{method:'POST',body:fd});
-    const d=await r.json();
+    const fd = new FormData();
+    fd.append('text',      text);
+    fd.append('type',      selectedSchedType);
+    fd.append('title',     title);
+    fd.append('fire_at',   fireDisplay);
+    fd.append('fire_at_ts', String(fireTs));
+    fd.append('link',      link);
+    fd.append('duration',  '300');
+    const r = await fetch('/schedule-add',{method:'POST',body:fd});
+    const d = await r.json();
     if(d.ok){
-      showToast('✅ تم جدولة الإشعار','ok');
+      showToast('✅ تم الجدولة — '+fireDisplay,'ok');
       _('schedMsgInput').value=''; _('schedLinkInput').value='';
       loadSchedule();
-    } else showToast('❌ '+(d.error||'خطأ'),'err');
-  }catch{ showToast('❌ خطأ في الاتصال','err'); }
+    } else {
+      showToast('❌ '+(d.error||'خطأ'),'err');
+    }
+  } catch(e){ showToast('❌ خطأ في الاتصال','err'); }
   if(btn){ btn.disabled=false; btn.innerHTML='<i class="fas fa-calendar-plus"></i>&nbsp;جدولة الإشعار'; }
 }
 
-function fmtFireAt(iso){
+function fmtFireAt(ts){
   try{
-    const d = new Date(iso);
+    const d = new Date(parseFloat(ts)*1000);
     return d.toLocaleDateString('ar-EG',{month:'short',day:'numeric'})
-      + ' — ' + d.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'});
-  }catch{ return iso; }
+         + ' — ' + d.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'});
+  }catch{ return '—'; }
 }
 
 async function loadSchedule(){
@@ -1778,24 +1836,34 @@ async function loadSchedule(){
   try{
     const r=await fetch('/schedule-list'); const d=await r.json();
     const wrap=_('schedList');
+    // فرق التوقيت بين السيرفر والمتصفح
+    const serverTs   = d.server_time || 0;
+    const clientTs   = Date.now()/1000;
+    const diffMin    = Math.round((clientTs - serverTs)/60);
+    const diffWarn   = Math.abs(diffMin) > 5
+      ? `<div style="font-size:.52rem;color:var(--gold);background:rgba(232,199,111,.08);border:1px solid rgba(232,199,111,.2);border-radius:8px;padding:6px 10px;margin-bottom:10px">
+           <i class="fas fa-triangle-exclamation"></i>&nbsp;فرق التوقيت: ${diffMin > 0 ? '+' : ''}${diffMin} دقيقة — السيرفر قد يكون UTC
+         </div>` : '';
     const items=d.items||[];
-    if(!items.length){
-      wrap.innerHTML='<div class="hist-empty"><i class="fas fa-calendar-xmark" style="display:block;font-size:1.5rem;margin-bottom:8px;opacity:.3"></i>لا توجد إشعارات مجدولة</div>';
+    if(!items.filter(i=>!i.done).length && !items.length){
+      wrap.innerHTML=diffWarn+'<div class="hist-empty"><i class="fas fa-calendar-xmark" style="display:block;font-size:1.5rem;margin-bottom:8px;opacity:.3"></i>لا توجد إشعارات مجدولة</div>';
       return;
     }
-    wrap.innerHTML=items.map(s=>`
+    wrap.innerHTML=diffWarn+items.map(s=>`
       <div class="sched-item type-${s.type||'info'}${s.done?' done-item':''}">
         <div class="sched-item-body">
           <div class="sched-item-title">${esc(s.title||'TALASHNY')}</div>
           <div class="sched-item-text">${esc(s.text)}</div>
           <div class="sched-item-time ${s.done?'done-badge':''}">
-            ${s.done?'<i class="fas fa-check"></i> تم الإرسال':'<i class="fas fa-clock"></i> '+fmtFireAt(s.fire_at)}
+            ${s.done?'<i class="fas fa-check"></i> تم الإرسال':'<i class="fas fa-clock"></i> '+fmtFireAt(s.fire_at_ts)}
           </div>
         </div>
         ${!s.done?`<div class="sched-del" onclick="deleteSchedule('${esc(s.id)}')"><i class="fas fa-trash"></i></div>`:''}
       </div>
     `).join('');
-  }catch{}
+  }catch(e){
+    _('schedList').innerHTML='<div class="hist-empty">خطأ في التحميل</div>';
+  }
 }
 
 async function deleteSchedule(id){
@@ -2015,6 +2083,7 @@ def fetch():
     sid = session.get("sid","")
     if sid: update_online(sid)
     do_refresh()
+    check_schedule_and_fire()   # ← تحقق من الجدولة مع كل fetch
     return jsonify({
         "ok":    True,
         "promos":api_promos(session["token"],session["number"]),
@@ -2108,9 +2177,18 @@ def schedule_add():
 def schedule_list():
     items   = read_schedule()
     cutoff  = time.time() - 86400
-    items   = [i for i in items if not (i.get("done") and i.get("fire_at_ts",0) < cutoff)]
+    items   = [i for i in items if not (i.get("done") and float(i.get("fire_at_ts",0)) < cutoff)]
     write_schedule(items)
-    return jsonify({"ok":True,"items":items})
+    return jsonify({"ok":True,"items":items,"server_time":time.time()})
+
+@app.route("/schedule-debug")
+def schedule_debug():
+    """للتشخيص — يوضح الوقت الحالي للسيرفر والإشعارات المجدولة"""
+    return jsonify({
+        "server_time":    time.time(),
+        "server_time_hr": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "items":          read_schedule()
+    })
 
 @app.route("/schedule-delete", methods=["POST"])
 def schedule_delete():
