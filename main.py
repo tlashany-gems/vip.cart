@@ -619,8 +619,12 @@ img{pointer-events:none;-webkit-user-drag:none}
   box-shadow:0 30px 80px rgba(0,0,0,.9);
   transform:translateY(30px) scale(.96);
   transition:transform .35s cubic-bezier(.34,1.2,.64,1);
+  display:flex;flex-direction:column;
+  max-height:90vh;
 }
 .admin-overlay.open .admin-panel{transform:translateY(0) scale(1);}
+.admin-content{overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.admin-auth{overflow-y:auto;}
 
 .admin-head{
   background:linear-gradient(135deg,rgba(230,0,0,.12),rgba(0,0,0,.0));
