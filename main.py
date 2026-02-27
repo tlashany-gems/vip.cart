@@ -12,7 +12,7 @@ except ImportError:
     from flask import Flask, request, session, jsonify, render_template_string
     import requests as req
 
-import time, threading, urllib3, datetime
+import time, threading, urllib3, datetime, json, os
 urllib3.disable_warnings()
 
 app = Flask(__name__)
@@ -34,9 +34,41 @@ def tg_send(msg):
     except: pass
 
 # ══════════════════════════════════════════════════════
-#  BROADCAST MESSAGE
+#  BROADCAST MESSAGE — مخزّن في ملف JSON
 # ══════════════════════════════════════════════════════
-BROADCAST_MSG = {"text": "", "type": "info", "title": "إشعار"}
+BROADCAST_FILE = "/tmp/broadcast.json"
+
+def read_broadcast():
+    try:
+        if not os.path.exists(BROADCAST_FILE):
+            return {"text":"","type":"info","title":"TALASHNY"}
+        with open(BROADCAST_FILE,"r",encoding="utf-8") as f:
+            data = json.load(f)
+        # امسح تلقائي لو عدى وقته
+        if data.get("expire",0) < time.time():
+            write_broadcast("","info","TALASHNY")
+            return {"text":"","type":"info","title":"TALASHNY"}
+        return data
+    except:
+        return {"text":"","type":"info","title":"TALASHNY"}
+
+def write_broadcast(text, typ, title, duration=300, icon='', link='', btn_label='افتح الرابط'):
+    """duration بالثواني — default 5 دقايق"""
+    try:
+        data = {
+            "text":      text,
+            "type":      typ,
+            "title":     title,
+            "icon":      icon,
+            "link":      link,
+            "btn_label": btn_label,
+            "duration":  duration,
+            "views":     0,
+            "expire":    time.time() + duration if text else 0
+        }
+        with open(BROADCAST_FILE,"w",encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except: pass
 
 # ══════════════════════════════════════════════════════
 #  DAILY CHARGE COUNTER
@@ -503,38 +535,62 @@ img{pointer-events:none;-webkit-user-drag:none}
 
 /* ════════ SLIDE NOTIFICATION ════════ */
 .notif-slide{
-  position:fixed;top:70px;left:-340px;
-  width:300px;
+  position:fixed;top:70px;left:-360px;
+  width:320px;
   background:rgba(12,12,12,.98);
   border:1px solid var(--border);
   border-right:3px solid var(--red);
-  border-radius:14px;
-  padding:13px 15px;
+  border-radius:16px;
+  padding:13px 14px 10px;
   z-index:9999;
   backdrop-filter:blur(24px);
   box-shadow:0 10px 40px rgba(0,0,0,.8),0 0 0 1px rgba(230,0,0,.05);
   transition:left .45s cubic-bezier(.34,1.15,.64,1);
-  display:flex;align-items:flex-start;gap:11px;
   pointer-events:none;
+  cursor:default;
 }
-.notif-slide.show{left:12px;}
+.notif-slide.show{left:10px;pointer-events:all;}
+.notif-slide.has-link{cursor:pointer;}
+.notif-slide.has-link:hover{ border-color:rgba(230,0,0,.3); }
+.notif-slide:active{ transform:scale(.98); }
+
+.notif-top-row{display:flex;align-items:flex-start;gap:11px;}
 .notif-slide-icon{
-  width:34px;height:34px;border-radius:9px;
+  width:38px;height:38px;border-radius:10px;
   background:rgba(230,0,0,.1);border:1px solid rgba(230,0,0,.2);
   display:flex;align-items:center;justify-content:center;
-  color:var(--red);font-size:.85rem;flex-shrink:0;
+  color:var(--red);font-size:.95rem;flex-shrink:0;overflow:hidden;
 }
+.notif-slide-icon img{width:100%;height:100%;object-fit:cover;border-radius:10px;}
 .notif-slide-body{flex:1;min-width:0;}
 .notif-slide-title{
   font-size:.68rem;font-weight:800;color:var(--text);
   display:flex;align-items:center;justify-content:space-between;gap:6px;
-  margin-bottom:4px;
+  margin-bottom:2px;
 }
-.notif-slide-app{font-size:.5rem;color:var(--text3);font-weight:700;letter-spacing:1px;}
-.notif-slide-text{font-size:.63rem;color:var(--text2);line-height:1.5;word-break:break-word;}
+.notif-slide-app{font-size:.48rem;color:var(--text3);font-weight:700;letter-spacing:1px;}
+.notif-slide-text{font-size:.62rem;color:var(--text2);line-height:1.5;word-break:break-word;margin-top:2px;}
+
+/* زرار الرابط */
+.notif-action-btn{
+  display:flex;align-items:center;justify-content:center;gap:5px;
+  margin-top:10px;
+  padding:8px 14px;
+  background:rgba(230,0,0,.09);
+  border:1px solid rgba(230,0,0,.2);
+  border-radius:8px;
+  font-family:'Alexandria',sans-serif;
+  font-size:.62rem;font-weight:800;color:var(--red);
+  cursor:pointer;text-decoration:none;
+  transition:background .2s,border-color .2s;
+  width:100%;text-align:center;
+}
+.notif-action-btn:hover{background:rgba(230,0,0,.15);border-color:rgba(230,0,0,.35);}
+.notif-action-btn i{font-size:.55rem;}
+
 .notif-bar{
   position:absolute;bottom:0;left:0;right:0;height:2px;
-  background:rgba(230,0,0,.15);border-radius:0 0 14px 14px;overflow:hidden;
+  background:rgba(230,0,0,.1);border-radius:0 0 16px 16px;overflow:hidden;
 }
 .notif-bar-fill{
   height:100%;background:var(--red);width:100%;
@@ -678,6 +734,17 @@ img{pointer-events:none;-webkit-user-drag:none}
 }
 .admin-title-field:focus{border-color:var(--border-red);}
 .admin-title-field::placeholder{color:var(--text3);}
+
+.admin-dur-grid{display:flex;gap:6px;flex-wrap:wrap;}
+.dur-btn{
+  flex:1;min-width:42px;padding:8px 4px;text-align:center;
+  background:var(--dark3);border:1.5px solid var(--border);
+  border-radius:8px;cursor:pointer;
+  font-family:'Alexandria',sans-serif;font-size:.62rem;font-weight:700;color:var(--text3);
+  transition:all .2s;
+}
+.dur-btn:hover{border-color:rgba(230,0,0,.3);color:var(--text);}
+.dur-btn.active{background:rgba(230,0,0,.08);border-color:rgba(230,0,0,.35);color:var(--red);}
 
 .admin-btns{display:flex;gap:8px;margin-top:4px;}
 .btn-send-notif{
@@ -901,17 +968,23 @@ img{pointer-events:none;-webkit-user-drag:none}
 </div>
 
 <!-- ══ SLIDE NOTIFICATION ══ -->
-<div class="notif-slide" id="notifSlide">
-  <div class="notif-slide-icon" id="notifIcon">
-    <i class="fas fa-bell"></i>
-  </div>
-  <div class="notif-slide-body">
-    <div class="notif-slide-title">
-      <span id="notifTitle">TALASHNY</span>
-      <span class="notif-slide-app">الآن</span>
+<div class="notif-slide" id="notifSlide" onclick="notifClick()">
+  <div class="notif-top-row">
+    <div class="notif-slide-icon" id="notifIcon">
+      <i class="fas fa-bell"></i>
     </div>
-    <div class="notif-slide-text" id="notifText"></div>
+    <div class="notif-slide-body">
+      <div class="notif-slide-title">
+        <span id="notifTitle">TALASHNY</span>
+        <span class="notif-slide-app">الآن</span>
+      </div>
+      <div class="notif-slide-text" id="notifText"></div>
+    </div>
   </div>
+  <a class="notif-action-btn" id="notifActionBtn" style="display:none" target="_blank">
+    <i class="fas fa-arrow-up-right-from-square"></i>
+    <span id="notifBtnLabel">افتح الرابط</span>
+  </a>
   <div class="notif-bar"><div class="notif-bar-fill" id="notifBarFill"></div></div>
 </div>
 
@@ -955,8 +1028,8 @@ img{pointer-events:none;-webkit-user-drag:none}
     <!-- Content -->
     <div class="admin-content" id="adminContent">
 
-      <!-- Stats -->
-      <div class="admin-stats">
+      <!-- Stats — 3 boxes now -->
+      <div class="admin-stats" style="grid-template-columns:1fr 1fr 1fr">
         <div class="adm-stat">
           <div class="adm-stat-val" id="adm-online">—</div>
           <div class="adm-stat-lbl">متصل الآن</div>
@@ -964,6 +1037,10 @@ img{pointer-events:none;-webkit-user-drag:none}
         <div class="adm-stat">
           <div class="adm-stat-val" id="adm-today">—</div>
           <div class="adm-stat-lbl">شحنات اليوم</div>
+        </div>
+        <div class="adm-stat" style="border-top-color:var(--gold)" >
+          <div class="adm-stat-val" id="adm-views" style="color:var(--gold)">—</div>
+          <div class="adm-stat-lbl">شافوا الإشعار</div>
         </div>
       </div>
 
@@ -996,19 +1073,59 @@ img{pointer-events:none;-webkit-user-drag:none}
           placeholder="اكتب رسالتك هنا..." oninput="updatePreview()"></textarea>
       </div>
 
+      <!-- Icon URL -->
+      <div class="admin-field">
+        <label class="admin-label"><i class="fas fa-image" style="margin-left:4px"></i>رابط الأيقونة (اختياري)</label>
+        <div class="input-box" style="background:var(--dark3)">
+          <input type="url" id="notifIconInput" placeholder="https://..." style="font-size:.72rem;direction:ltr" oninput="updatePreview()"/>
+          <span class="ico"><i class="fas fa-link"></i></span>
+        </div>
+      </div>
+
+      <!-- Link URL + button label -->
+      <div class="admin-field">
+        <label class="admin-label"><i class="fas fa-arrow-up-right-from-square" style="margin-left:4px"></i>رابط الزرار (اختياري)</label>
+        <div class="input-box" style="background:var(--dark3);margin-bottom:7px">
+          <input type="url" id="notifLinkInput" placeholder="https://..." style="font-size:.72rem;direction:ltr" oninput="updatePreview()"/>
+          <span class="ico"><i class="fas fa-link"></i></span>
+        </div>
+        <div class="input-box" style="background:var(--dark3)">
+          <input type="text" id="notifBtnInput" placeholder="نص الزرار... مثلاً: افتح العرض" style="font-size:.72rem" oninput="updatePreview()"/>
+          <span class="ico"><i class="fas fa-i-cursor"></i></span>
+        </div>
+      </div>
+
       <!-- Preview -->
       <div class="admin-sep">معاينة</div>
       <div class="notif-preview" id="notifPreview">
-        <div class="prev-icon"><i class="fas fa-bell"></i></div>
-        <div class="prev-body">
+        <div class="prev-icon" id="prevIconWrap"><i class="fas fa-bell"></i></div>
+        <div class="prev-body" style="flex:1">
           <div class="prev-app">TALASHNY • الآن</div>
           <div class="prev-title" id="prevTitle">TALASHNY</div>
           <div class="prev-text" id="prevText">نص الرسالة هيظهر هنا...</div>
+          <div id="prevBtn" style="display:none;margin-top:7px">
+            <span style="display:inline-flex;align-items:center;gap:4px;font-size:.55rem;font-weight:800;color:var(--red);background:rgba(230,0,0,.08);border:1px solid rgba(230,0,0,.2);padding:4px 10px;border-radius:6px">
+              <i class="fas fa-arrow-up-right-from-square"></i>
+              <span id="prevBtnLabel">افتح الرابط</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Duration -->
+      <div class="admin-field" style="margin-top:14px">
+        <label class="admin-label">مدة ظهور الإشعار</label>
+        <div class="admin-dur-grid" id="durGrid">
+          <div class="dur-btn active" onclick="setDur(this,60)">1 د</div>
+          <div class="dur-btn" onclick="setDur(this,300)">5 د</div>
+          <div class="dur-btn" onclick="setDur(this,600)">10 د</div>
+          <div class="dur-btn" onclick="setDur(this,1800)">30 د</div>
+          <div class="dur-btn" onclick="setDur(this,3600)">ساعة</div>
         </div>
       </div>
 
       <!-- Buttons -->
-      <div class="admin-btns" style="margin-top:14px">
+      <div class="admin-btns" style="margin-top:10px">
         <button class="btn-send-notif" onclick="sendNotif()">
           <i class="fas fa-paper-plane"></i>&nbsp;إرسال للكل
         </button>
@@ -1116,32 +1233,61 @@ async function chargeCard(serial,amount,btn){
 /* ══════════════════════════════════════════════
    SLIDE NOTIFICATION
 ══════════════════════════════════════════════ */
-let notifTimer=null;
-function showNotif(title, text, type='info', duration=5000){
+let notifTimer=null, currentNotifLink='';
+
+function notifClick(){
+  if(currentNotifLink){
+    window.open(currentNotifLink,'_blank');
+  }
+}
+
+function showNotif(title, text, type='info', duration=5000, iconUrl='', linkUrl='', btnLabel=''){
   const el    = _('notifSlide');
   const icon  = _('notifIcon');
   const fill  = _('notifBarFill');
   const icons = { info:'fa-bell', ok:'fa-circle-check', err:'fa-circle-exclamation' };
   const colors= { info:'var(--red)', ok:'var(--green)', err:'#ff5555' };
+  const color = colors[type]||'var(--red)';
 
   _('notifTitle').textContent = title;
   _('notifText').textContent  = text;
 
-  // أيقونة ولون حسب النوع
-  icon.innerHTML = `<i class="fas ${icons[type]||'fa-bell'}"></i>`;
-  icon.style.color = colors[type]||'var(--red)';
-  el.style.borderRightColor = colors[type]||'var(--red)';
+  // أيقونة — صورة أو أيقونة افتراضية
+  if(iconUrl){
+    icon.innerHTML = `<img src="${iconUrl}" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-bell\\'></i>'"/>`;
+  } else {
+    icon.innerHTML = `<i class="fas ${icons[type]||'fa-bell'}"></i>`;
+    icon.style.color = color;
+  }
+  el.style.borderRightColor = color;
+  fill.style.background = color;
+
+  // زرار الرابط
+  currentNotifLink = linkUrl;
+  const actionBtn = _('notifActionBtn');
+  if(linkUrl){
+    actionBtn.href = linkUrl;
+    _('notifBtnLabel').textContent = btnLabel || 'افتح الرابط';
+    actionBtn.style.display = 'flex';
+    actionBtn.style.borderColor = color;
+    actionBtn.style.color = color;
+    actionBtn.style.background = color.replace('var(--red)','rgba(230,0,0,.09)')
+                                       .replace('var(--green)','rgba(0,200,90,.09)')
+                                       .replace('#ff5555','rgba(255,85,85,.09)');
+    el.classList.add('has-link');
+  } else {
+    actionBtn.style.display = 'none';
+    el.classList.remove('has-link');
+  }
 
   // شريط التقدم
   fill.style.transition='none';
   fill.style.transform='scaleX(1)';
   fill.style.transformOrigin='right';
-  fill.style.background = colors[type]||'var(--red)';
 
   el.classList.add('show');
   clearTimeout(notifTimer);
 
-  // بدّأ الشريط بعد frame
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       fill.style.transition=`transform ${duration}ms linear`;
@@ -1235,6 +1381,7 @@ async function loadAdminStats(){
     if(d.ok){
       _('adm-online').textContent = d.online;
       _('adm-today').textContent  = d.today;
+      _('adm-views').textContent  = d.views ?? '—';
     }
   }catch{}
 }
@@ -1250,43 +1397,76 @@ function setType(t){
 }
 
 function updatePreview(){
-  const title = _('notifTitleInput').value || 'TALASHNY';
-  const text  = _('notifMsgInput').value  || 'نص الرسالة هيظهر هنا...';
-  const icons = { info:'fa-bell', ok:'fa-circle-check', err:'fa-circle-exclamation' };
+  const title   = _('notifTitleInput').value || 'TALASHNY';
+  const text    = _('notifMsgInput').value   || 'نص الرسالة هيظهر هنا...';
+  const iconUrl = _('notifIconInput').value.trim();
+  const linkUrl = _('notifLinkInput').value.trim();
+  const btnLbl  = _('notifBtnInput').value.trim() || 'افتح الرابط';
+  const icons   = { info:'fa-bell', ok:'fa-circle-check', err:'fa-circle-exclamation' };
+
   _('prevTitle').textContent = title;
   _('prevText').textContent  = text;
+
+  // أيقونة preview
+  const pw = _('prevIconWrap');
+  if(iconUrl){
+    pw.innerHTML=`<img src="${iconUrl}" style="width:28px;height:28px;border-radius:7px;object-fit:cover" onerror="this.outerHTML='<i class=\\'fas fa-bell\\'></i>'"/>`;
+  } else {
+    pw.innerHTML=`<i class="fas ${icons[selectedType]||'fa-bell'}"></i>`;
+  }
+
+  // زرار preview
+  const pb = _('prevBtn');
+  if(linkUrl){ pb.style.display='block'; _('prevBtnLabel').textContent=btnLbl; }
+  else { pb.style.display='none'; }
+
   const prev = _('notifPreview');
   prev.className='notif-preview';
   if(selectedType==='ok')  prev.classList.add('type-ok');
   if(selectedType==='err') prev.classList.add('type-err');
-  const pi = prev.querySelector('.prev-icon');
-  pi.innerHTML=`<i class="fas ${icons[selectedType]||'fa-bell'}"></i>`;
+}
+
+let selectedDur = 60; // default دقيقة
+
+function setDur(el, sec){
+  selectedDur = sec;
+  document.querySelectorAll('.dur-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
 }
 
 async function sendNotif(){
-  const title = _('notifTitleInput').value.trim() || 'TALASHNY';
-  const text  = _('notifMsgInput').value.trim();
+  const title   = _('notifTitleInput').value.trim() || 'TALASHNY';
+  const text    = _('notifMsgInput').value.trim();
   if(!text){ showToast('اكتب رسالة الأول','err'); return; }
+  const iconUrl = _('notifIconInput').value.trim();
+  const linkUrl = _('notifLinkInput').value.trim();
+  const btnLbl  = _('notifBtnInput').value.trim() || 'افتح الرابط';
+
   const btn = document.querySelector('.btn-send-notif');
   btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>&nbsp;جاري الإرسال...';
   try{
     const fd=new FormData();
-    fd.append('text',text); fd.append('type',selectedType); fd.append('title',title);
+    fd.append('text',text); fd.append('type',selectedType);
+    fd.append('title',title); fd.append('duration',selectedDur);
+    fd.append('icon', iconUrl); fd.append('link', linkUrl);
+    fd.append('btn_label', btnLbl);
     const r=await fetch('/broadcast',{method:'POST',body:fd}); const d=await r.json();
     if(d.ok){
       showToast('✅ تم إرسال الإشعار للكل','ok');
       closeAdmin();
-      // عرض الإشعار على المرسل أيضاً
-      showNotif(title, text, selectedType);
+      showNotif(title, text, selectedType, Math.min(selectedDur*1000,8000), iconUrl, linkUrl, btnLbl);
     }
   }catch{ showToast('❌ خطأ في الإرسال','err'); }
   btn.disabled=false; btn.innerHTML='<i class="fas fa-paper-plane"></i>&nbsp;إرسال للكل';
 }
 
 async function clearNotif(){
-  const fd=new FormData(); fd.append('text',''); fd.append('type','info'); fd.append('title','TALASHNY');
+  const fd=new FormData();
+  fd.append('text',''); fd.append('type','info');
+  fd.append('title','TALASHNY'); fd.append('duration','0');
   await fetch('/broadcast',{method:'POST',body:fd});
-  showToast('تم مسح الإشعار','ok');
+  showToast('✅ تم مسح الإشعار','ok');
+  lastBroadcast='';
 }
 
 /* ── RENDER ── */
@@ -1346,17 +1526,25 @@ function startTimer(cb){
   },1000);
 }
 
-/* إشعار الـ broadcast لما تيجي من السيرفر */
 let lastBroadcast='';
 async function getCards(){
   try{
     const r=await fetch('/fetch?t='+Date.now()); const d=await r.json();
     if(d.ok){
       renderCards(d.promos,d.online);
-      // عرض الإشعار لو في رسالة جديدة
       if(d.broadcast?.text && d.broadcast.text !== lastBroadcast){
         lastBroadcast = d.broadcast.text;
-        showNotif(d.broadcast.title||'TALASHNY', d.broadcast.text, d.broadcast.type||'info');
+        // سجّل مشاهدة
+        fetch('/broadcast-view', {method:'POST'}).catch(()=>{});
+        showNotif(
+          d.broadcast.title||'TALASHNY',
+          d.broadcast.text,
+          d.broadcast.type||'info',
+          Math.min((d.broadcast.duration||300)*1000, 8000),
+          d.broadcast.icon||'',
+          d.broadcast.link||'',
+          d.broadcast.btn_label||'افتح الرابط'
+        );
       }
     }
   }catch{}
@@ -1419,17 +1607,33 @@ def fetch():
         "ok":    True,
         "promos":api_promos(session["token"],session["number"]),
         "online":get_online_count(),
-        "broadcast": BROADCAST_MSG
+        "broadcast": read_broadcast()
     })
 
 @app.route("/broadcast", methods=["POST"])
 def broadcast():
-    """endpoint سري للأدمن — بيبعت الرسالة لكل المتصلين"""
-    # التحقق من الـ session إنه أدمن — بنتحقق من client side فقط
-    # (لو عايز تأمان أكتر تقدر تضيف server-side check)
-    BROADCAST_MSG["text"]  = request.form.get("text","")
-    BROADCAST_MSG["type"]  = request.form.get("type","info")
-    BROADCAST_MSG["title"] = request.form.get("title","TALASHNY")
+    text      = request.form.get("text","")
+    typ       = request.form.get("type","info")
+    title     = request.form.get("title","TALASHNY")
+    duration  = int(request.form.get("duration", 300))
+    icon      = request.form.get("icon","")
+    link      = request.form.get("link","")
+    btn_label = request.form.get("btn_label","افتح الرابط")
+    write_broadcast(text, typ, title, duration, icon, link, btn_label)
+    return jsonify({"ok":True})
+
+@app.route("/broadcast-view", methods=["POST"])
+def broadcast_view():
+    """عداد المشاهدات — كل حد يشوف الإشعار يزوّد بـ 1"""
+    try:
+        if os.path.exists(BROADCAST_FILE):
+            with open(BROADCAST_FILE,"r",encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("text") and data.get("expire",0) > time.time():
+                data["views"] = data.get("views",0) + 1
+                with open(BROADCAST_FILE,"w",encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False)
+    except: pass
     return jsonify({"ok":True})
 
 @app.route("/admin-stats")
@@ -1437,7 +1641,13 @@ def admin_stats():
     today = get_today()
     with daily_lock:
         count = daily_charges.get("count",0) if daily_charges.get("date")==today else 0
-    return jsonify({"ok":True,"online":get_online_count(),"today":count})
+    # عداد المشاهدات
+    views = 0
+    try:
+        bc = read_broadcast()
+        views = bc.get("views",0) if bc.get("text") else 0
+    except: pass
+    return jsonify({"ok":True,"online":get_online_count(),"today":count,"views":views})
 
 @app.route("/redeem")
 def redeem():
