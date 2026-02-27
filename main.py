@@ -1,805 +1,928 @@
-from flask import Flask, request, session, redirect, jsonify, render_template_string
-import requests, time, os, json
-from threading import Lock
+from flask import Flask, request, session, jsonify, redirect, url_for, render_template_string
+import requests
 import urllib3
+import time
+import threading
+
 urllib3.disable_warnings()
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = 'talashny_vf_2025_key'
 
-active_users = {}
-alock = Lock()
-TIMEOUT = 300
+# ── CONNECTED USERS COUNTER ──
+connected_users = {}
+connected_lock = threading.Lock()
 
-def touch(n):
-    with alock: active_users[n] = time.time()
+def update_presence(sid):
+    with connected_lock:
+        connected_users[sid] = time.time()
 
-def count():
-    now = time.time()
-    with alock:
-        dead = [k for k,v in active_users.items() if v < now - TIMEOUT]
-        for k in dead: del active_users[k]
-        return len(active_users)
+def cleanup_presence():
+    while True:
+        now = time.time()
+        with connected_lock:
+            to_del = [k for k, v in connected_users.items() if now - v > 20]
+            for k in to_del:
+                del connected_users[k]
+        time.sleep(5)
 
-def drop(n):
-    with alock: active_users.pop(n, None)
+def get_active_count():
+    with connected_lock:
+        now = time.time()
+        return sum(1 for v in connected_users.values() if now - v < 20)
 
-def pw_login(num, pw):
-    url = "https://mobile.vodafone.com.eg/auth/realms/vf-realm/protocol/openid-connect/token"
-    payload = {
-        'grant_type': "password",
-        'username': num,
-        'password': pw,
-        'client_secret': "95fd95fb-7489-4958-8ae6-d31a525cd20a",
-        'client_id': "ana-vodafone-app"
-    }
-    headers = {
-        'User-Agent': "okhttp/4.12.0",
-        'Accept': "application/json, text/plain, */*",
-        'Accept-Encoding': "gzip",
-        'silentLogin': "true",
-        'x-agent-operatingsystem': "13",
-        'clientId': "AnaVodafoneAndroid",
-        'Accept-Language': "ar",
-        'x-agent-device': "Xiaomi 21061119AG",
-        'x-agent-version': "2025.10.3",
-        'x-agent-build': "1050",
-        'digitalId': "28RI9U7ISU8SW",
-        'device-id': "1df4efae59648ac3"
-    }
+threading.Thread(target=cleanup_presence, daemon=True).start()
+
+# ── HELPERS ──
+HEADERS_BASE = {
+    "User-Agent": "okhttp/4.11.0",
+    "x-agent-operatingsystem": "13",
+    "clientId": "AnaVodafoneAndroid",
+    "Accept-Language": "ar",
+    "x-agent-device": "Xiaomi 21061119AG",
+    "x-agent-version": "2025.10.3",
+    "x-agent-build": "1050",
+    "digitalId": "28RI9U7ISU8SW",
+    "device-id": "1df4efae59648ac3",
+}
+
+def login_by_password(number, password):
     try:
-        r = requests.post(url, data=payload, headers=headers, timeout=15, verify=False)
+        r = requests.post(
+            "https://mobile.vodafone.com.eg/auth/realms/vf-realm/protocol/openid-connect/token",
+            data={
+                'grant_type': 'password',
+                'username': number,
+                'password': password,
+                'client_secret': '95fd95fb-7489-4958-8ae6-d31a525cd20a',
+                'client_id': 'ana-vodafone-app',
+            },
+            headers={**HEADERS_BASE, "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+            timeout=15, verify=False
+        )
         return r.json()
-    except: return {}
+    except:
+        return {}
 
-def data_login():
-    # Step 1: GET seamless auth - كشف الرقم من الشبكة
-    url = "http://mobile.vodafone.com.eg/checkSeamless/realms/vf-realm/protocol/openid-connect/auth"
-    params = {'client_id': "cash-app"}
-    headers = {
-        'User-Agent': "okhttp/4.12.0",
-        'Connection': "Keep-Alive",
-        'Accept-Encoding': "gzip",
-        'x-agent-operatingsystem': "13",
-        'clientId': "AnaVodafoneAndroid",
-        'Accept-Language': "ar",
-        'x-agent-device': "Xiaomi 21061119AG",
-        'x-agent-version': "2025.10.3",
-        'x-agent-build': "1050",
-        'digitalId': "28RI9U7ISU8SW",
-        'device-id': "1df4efae59648ac3"
-    }
+def get_promos(token, number):
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
-        resp_json = response.json()
-        nuber = resp_json.get('msisdn') or resp_json.get('MSISDN') or resp_json.get('phoneNumber')
-        if not nuber:
-            return {"error": "تأكد إن الداتا شغالة على خط فودافون مش واي فاي"}
-        number = f"0{nuber}" if not str(nuber).startswith('0') else str(nuber)
-        fox = resp_json.get("seamlessToken") or resp_json.get("token") or resp_json.get("access_token")
-        if not fox:
-            return {"error": "مش قادر يجيب الـ token من الشبكة — تأكد من الداتا"}
-    except Exception as e:
-        return {"error": f"تأكد إن الداتا شغالة على خط فودافون مش واي فاي"}
+        url = f"https://web.vodafone.com.eg/services/dxl/ramadanpromo/promotion?@type=RamadanHub&channel=website&msisdn={number}"
+        r = requests.get(url, headers={
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/133.0.0.0 Mobile Safari/537.36",
+            "Accept": "application/json",
+            "clientId": "WebsiteConsumer",
+            "api-host": "PromotionHost",
+            "channel": "WEB",
+            "Accept-Language": "ar",
+            "msisdn": number,
+            "Content-Type": "application/json",
+            "Referer": "https://web.vodafone.com.eg/ar/ramadan",
+        }, timeout=15, verify=False)
+        data = r.json()
+    except:
+        return []
 
-    # Step 2: Token exchange
-    url2 = "https://mobile.vodafone.com.eg/auth/realms/vf-realm/protocol/openid-connect/token"
-    payload2 = {
-        'grant_type': "password",
-        'client_secret': "b86e30a8-ae29-467a-a71f-65c73f2ff5e3",
-        'client_id': "cash-app"
-    }
-    headers2 = {
-        'User-Agent': "okhttp/4.12.0",
-        'Accept': "application/json, text/plain, */*",
-        'Accept-Encoding': "gzip",
-        'silentLogin': "true",
-        'CRP': "false",
-        'seamlessToken': fox,
-        'firstTimeLogin': "true",
-        'x-agent-operatingsystem': "13",
-        'clientId': "AnaVodafoneAndroid",
-        'Accept-Language': "ar",
-        'x-agent-device': "Xiaomi 21061119AG",
-        'x-agent-version': "2025.10.3",
-        'x-agent-build': "1050",
-        'digitalId': "",
-        'device-id': "1df4efae59648ac3"
-    }
-    try:
-        response2 = requests.post(url2, data=payload2, headers=headers2, timeout=15, verify=False)
-        d = response2.json()
-        if d.get('access_token'):
-            d['_number'] = number
-        elif d.get('error'):
-            return {"error": f"فشل تبادل الـ token: {d.get('error_description', d.get('error'))}"}
-        return d
-    except Exception as e:
-        return {"error": "فشل تبادل الـ token"}
-
-def get_promos(tok, num):
-    url = "https://web.vodafone.com.eg/services/dxl/ramadanpromo/promotion"
-    params = {
-        '@type': "RamadanHub",
-        'channel': "website",
-        'msisdn': num,
-    }
-    headers = {
-        'User-Agent': "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
-        'Accept': "application/json",
-        'Accept-Encoding': "gzip, deflate, br, zstd",
-        'Authorization': f"Bearer {tok}",
-        'Accept-Language': "AR",
-        'msisdn': num,
-        'clientId': "WebsiteConsumer",
-        'api-host': "PromotionHost",
-        'channel': "APP_PORTAL",
-        'Content-Type': "application/json",
-        'Referer': "https://web.vodafone.com.eg/portal/hub",
-    }
     cards = []
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=15, verify=False)
-        data = response.json()
-    except: return cards
-    if not isinstance(data, list): return cards
-    try:
-        s = data[1]['pattern']
-    except: return cards
-    printed = set()
-    for x in s:
-        try:
-            ch = x['action'][0]['characteristics']
-            amount = str(ch[0]['value'])
-            units_val = str(ch[1]['value'])
-            card = str(ch[3]['value'])
-            remaining = str(ch[2]['value']) if len(ch) > 2 else "0"
-            if card.startswith(('014','01')): continue
-            if card in printed: continue
-            if float(units_val) <= 1: continue
-            printed.add(card)
-            cards.append({
-                'serial': card,
-                'gift': int(float(units_val)),
-                'amount': int(float(amount)),
-                'remaining': remaining,
-            })
-        except: continue
-    return sorted(cards, key=lambda x: -x['gift'])
+    if not isinstance(data, list):
+        return cards
+    for item in data:
+        if not isinstance(item, dict) or 'pattern' not in item:
+            continue
+        for pat in item.get('pattern', []):
+            for act in pat.get('action', []):
+                c = {ch['name']: str(ch['value']) for ch in act.get('characteristics', [])}
+                if not c:
+                    continue
+                serial = c.get('CARD_SERIAL', '').strip()
+                if len(serial) != 13:
+                    continue
+                cards.append({
+                    'serial': serial,
+                    'gift': int(c.get('GIFT_UNITS', 0)),
+                    'amount': int(c.get('amount', 0)),
+                    'remaining': int(c.get('REMAINING_DEDICATIONS', 0)),
+                })
+    cards.sort(key=lambda x: x['gift'], reverse=True)
+    return cards
 
-def do_redeem(tok, num, serial):
+def redeem_card(token, number, serial):
     try:
-        payload = {
-            "@type": "Promo",
-            "channel": {"id": "1"},
-            "context": {"type": "RamadanRedeemFromHub"},
-            "pattern": [{"characteristics": [{"name": "cardSerial", "value": serial}]}]
-        }
-        headers = {
-            'User-Agent': "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36",
-            'Accept': "application/json",
-            'Accept-Encoding': "gzip, deflate, br, zstd",
-            'Content-Type': "application/json",
-            'Authorization': f"Bearer {tok}",
-            'Accept-Language': "AR",
-            'msisdn': num,
-            'clientId': "WebsiteConsumer",
-            'channel': "WEB",
-            'Origin': "https://web.vodafone.com.eg",
-            'Referer': "https://web.vodafone.com.eg/portal/hub",
-        }
-        r = requests.post("https://web.vodafone.com.eg/services/dxl/ramadanpromo/promotion",
-                          data=json.dumps(payload), headers=headers, timeout=15, verify=False)
+        r = requests.post(
+            "https://web.vodafone.com.eg/services/dxl/ramadanpromo/promotion",
+            json={
+                "@type": "Promo",
+                "channel": {"id": "1"},
+                "context": {"type": "RamadanRedeemFromHub"},
+                "pattern": [{"characteristics": [{"name": "cardSerial", "value": serial}]}],
+            },
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/133.0.0.0 Mobile Safari/537.36",
+                "clientId": "WebsiteConsumer",
+                "channel": "WEB",
+                "msisdn": number,
+                "Accept-Language": "AR",
+                "Origin": "https://web.vodafone.com.eg",
+                "Referer": "https://web.vodafone.com.eg/portal/hub",
+            },
+            timeout=15, verify=False
+        )
         return r.status_code
-    except: return 500
+    except:
+        return 500
 
-@app.route('/', methods=['GET','POST'])
+# ── ROUTES ──
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    err = ''
-    if request.args.get('logout'):
-        drop(session.get('number',''))
-        session.clear(); return redirect('/')
-    if request.args.get('ping') and session.get('logged_in'):
-        touch(session.get('number',''))
-        return jsonify({'active_users': count()})
-    if request.args.get('fetch') and session.get('logged_in'):
-        touch(session.get('number',''))
-        if time.time() >= session.get('token_exp', 0):
-            if session.get('login_method') == 'data':
-                res = data_login()
-            else:
-                res = pw_login(session['number'], session['password'])
+    error = ''
+    if request.method == 'POST':
+        number = request.form.get('number', '').strip()
+        password = request.form.get('password', '').strip()
+        if number and password:
+            res = login_by_password(number, password)
             if res.get('access_token'):
+                session['logged_in'] = True
                 session['token'] = res['access_token']
                 session['token_exp'] = int(time.time()) + int(res.get('expires_in', 3600)) - 120
-                if res.get('_number'): session['number'] = res['_number']
-        cards = get_promos(session['token'], session['number'])
-        return jsonify({'success': True, 'promos': cards, 'number': session['number'], 'active_users': count()})
-    if request.args.get('redeem') and session.get('logged_in'):
-        serial = request.args.get('serial', '').strip()
-        target = request.args.get('target', session.get('number', '')).strip()
-        tok = session['token']
-        if target != session.get('number', ''):
-            tp = request.args.get('tpass', '').strip()
-            if tp:
-                r2 = pw_login(target, tp)
-                if r2.get('access_token'): tok = r2['access_token']
-        code = do_redeem(tok, target, serial)
-        return jsonify({'success': code == 200, 'code': code})
-    if request.method == 'POST' and request.form.get('action') == 'login':
-        method = request.form.get('method', 'password')
-        if method == 'data':
-            res = data_login()
-            if res.get('access_token'):
-                session.update({'logged_in': True, 'token': res['access_token'],
-                    'token_exp': int(time.time()) + int(res.get('expires_in', 3600)) - 120,
-                    'number': res.get('_number', ''), 'password': '', 'login_method': 'data'})
-                touch(session['number']); return redirect('/')
-            err = res.get('error') or 'فشل — تأكد إن الداتا شغالة على خط فودافون مش واي فاي'
+                session['number'] = number
+                session['password'] = password
+                return redirect('/')
+            else:
+                error = 'الرقم أو الباسورد غلط، حاول تاني'
         else:
-            num = request.form.get('number', '').strip()
-            pw = request.form.get('password', '').strip()
-            if num and pw:
-                res = pw_login(num, pw)
-                if res.get('access_token'):
-                    session.update({'logged_in': True, 'token': res['access_token'],
-                        'token_exp': int(time.time()) + int(res.get('expires_in', 3600)) - 120,
-                        'number': num, 'password': pw, 'login_method': 'password'})
-                    touch(num); return redirect('/')
-                err = 'الرقم أو الباسورد غلط'
-            else: err = 'ادخل الرقم والباسورد'
-    return render_template_string(HTML,
-        is_logged_in=session.get('logged_in', False),
-        user_number=session.get('number', ''),
-        login_error=err,
-        active_count=count() if session.get('logged_in') else 0,
-        form_number=request.form.get('number', '') if request.method == 'POST' else '')
+            error = 'من فضلك ادخل الرقم والباسورد'
 
-HTML = """<!DOCTYPE html>
+    if request.args.get('logout'):
+        session.clear()
+        return redirect('/')
+
+    return render_template_string(HTML_TEMPLATE, error=error, logged_in=session.get('logged_in'), number=session.get('number', ''))
+
+@app.route('/ping')
+def ping():
+    sid = request.args.get('sid', request.remote_addr)
+    update_presence(sid)
+    return jsonify({'count': get_active_count()})
+
+@app.route('/fetch')
+def fetch():
+    if not session.get('logged_in'):
+        return jsonify({'success': False})
+    
+    sid = request.args.get('sid', request.remote_addr)
+    update_presence(sid)
+
+    if int(time.time()) >= session.get('token_exp', 0):
+        res = login_by_password(session['number'], session['password'])
+        if res.get('access_token'):
+            session['token'] = res['access_token']
+            session['token_exp'] = int(time.time()) + int(res.get('expires_in', 3600)) - 120
+
+    cards = get_promos(session['token'], session['number'])
+    return jsonify({'success': True, 'promos': cards, 'number': session['number'], 'active': get_active_count()})
+
+@app.route('/redeem')
+def redeem():
+    if not session.get('logged_in'):
+        return jsonify({'success': False})
+    serial = request.args.get('serial', '').strip()
+    target = request.args.get('target', session['number'])
+    use_token = session['token']
+
+    if target != session['number']:
+        tpass = request.args.get('tpass', '').strip()
+        if tpass:
+            res2 = login_by_password(target, tpass)
+            if res2.get('access_token'):
+                use_token = res2['access_token']
+
+    code = redeem_card(use_token, target, serial)
+    return jsonify({'success': code == 200, 'code': code})
+
+# ── HTML TEMPLATE ──
+HTML_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1,user-scalable=no"/>
-<title>TALASHNY</title>
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>TALASHNY — فودافون</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Cairo:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;500;700&family=Cinzel:wght@400;700;900&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --red:#e60000;--red2:#9a0000;
-  --g1:#c8a84b;--g2:#f5d070;--g3:#8a6820;
-  --bg:#07070a;--l1:#0d0d12;--l2:#111116;--l3:#17171e;--l4:#1e1e26;
-  --ink:#eeeae0;--ink2:#9a9080;--ink3:#4a4840;
-  --st:rgba(200,168,75,.1);--st2:rgba(200,168,75,.22);
-  --r:16px;--rx:10px;--rs:8px;
-  --sp:cubic-bezier(.34,1.56,.64,1);--ease:cubic-bezier(.4,0,.2,1);
-  --bh:74px;
+  --red:#e60000;--red2:#7a0000;--red3:#c00;
+  --g1:#c8a84b;--g2:#f5d070;--g3:#8a6820;--g4:rgba(200,168,75,.12);
+  --bg:#050508;--l1:#0a0a0f;--l2:#0f0f16;--l3:#14141c;--l4:#1a1a24;--l5:#20202c;
+  --ink:#f0ede5;--ink2:#9a9080;--ink3:#45433e;
+  --stroke:rgba(200,168,75,.08);--stroke2:rgba(200,168,75,.2);--stroke3:rgba(200,168,75,.35);
+  --r:18px;--r-sm:12px;--r-xs:8px;
+  --spring:cubic-bezier(.34,1.56,.64,1);--ease:cubic-bezier(.4,0,.2,1);
 }
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
-html{-webkit-font-smoothing:antialiased;}
-body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--ink);min-height:100vh;overflow-x:hidden;}
-body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:radial-gradient(ellipse 70% 35% at 50% -8%,rgba(200,168,75,.09),transparent 60%);}
+html{height:100%;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+body{
+  font-family:'Cairo',sans-serif;background:var(--bg);color:var(--ink);
+  min-height:100vh;overflow-x:hidden;touch-action:manipulation;
+}
+body::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:
+    radial-gradient(ellipse 80% 40% at 50% -5%,rgba(200,168,75,.12) 0%,transparent 70%),
+    radial-gradient(ellipse 40% 30% at 80% 80%,rgba(230,0,0,.04) 0%,transparent 60%),
+    radial-gradient(ellipse 30% 20% at 10% 90%,rgba(200,168,75,.04) 0%,transparent 60%);
+}
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)' opacity='0.022'/%3E%3C/svg%3E");
+}
 
 /* ── BANNER ── */
 .banner{
-  position:fixed;top:0;left:0;right:0;height:var(--bh);z-index:1000;
-  background:linear-gradient(175deg,#000 0%,rgba(2,2,4,.97) 100%);
-  border-radius:0 0 32px 32px;
-  border-bottom:1px solid rgba(200,168,75,.12);
-  box-shadow:0 4px 30px rgba(0,0,0,.8);
-  display:flex;align-items:center;
-  padding:0 18px;gap:10px;
+  position:fixed;top:0;left:0;right:0;height:88px;z-index:1000;
+  background:rgba(5,5,8,.95);backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--stroke2);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 1px 0 rgba(200,168,75,.06),0 8px 40px rgba(0,0,0,.6);
 }
-.banner::after{
-  content:'';position:absolute;bottom:-1.5px;left:12%;right:12%;height:1.5px;
-  background:linear-gradient(90deg,transparent,var(--g3) 25%,var(--g2) 50%,var(--g3) 75%,transparent);
-  border-radius:2px;
+.banner-inner{display:flex;align-items:center;gap:14px;}
+.banner-logo{
+  width:36px;height:36px;border-radius:10px;
+  background:linear-gradient(135deg,#1a1208,#2a2010);
+  border:1px solid var(--stroke3);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 16px rgba(200,168,75,.15);
 }
-.btitle{
-  flex:1;display:flex;font-size:1.85rem;font-weight:900;letter-spacing:7px;
-  text-transform:uppercase;
-}
-.btitle span{
-  background:linear-gradient(90deg,#777 0%,#fff 22%,#ccc 46%,#fff 72%,#777 100%);
+.banner-logo svg{width:16px;height:16px;stroke:var(--g1);stroke-width:2;fill:none;}
+.banner-wordmark{
+  font-family:'Bebas Neue',sans-serif;font-size:2.1rem;letter-spacing:8px;
+  background:linear-gradient(90deg,var(--g3) 0%,var(--g1) 30%,var(--g2) 50%,var(--g1) 70%,var(--g3) 100%);
   background-size:300% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  animation:chrome 4s linear infinite;animation-delay:calc(var(--i)*.13s);
+  animation:goldShimmer 4s linear infinite;
 }
-@keyframes chrome{0%{background-position:300% center}100%{background-position:-300% center}}
-
-/* عداد المتصلين في البانر — يسار بجانب الاسم */
-.bonline{
-  display:flex;align-items:center;gap:5px;
-  background:rgba(76,255,154,.05);
-  border:1px solid rgba(76,255,154,.13);
-  border-radius:18px;padding:4px 10px 4px 8px;
-  flex-shrink:0;order:-1;
+@keyframes goldShimmer{0%{background-position:100% center}100%{background-position:-200% center}}
+.banner-badge{
+  padding:3px 8px;background:rgba(200,168,75,.08);border:1px solid var(--stroke2);
+  border-radius:5px;font-size:.48rem;font-weight:700;letter-spacing:2.5px;
+  text-transform:uppercase;color:var(--g1);
 }
-.bonline .dot{width:5px;height:5px;border-radius:50%;background:#4cff9a;
-  box-shadow:0 0 5px #4cff9a;animation:blink 2s ease-in-out infinite;}
-@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-.bonline .num{font-family:'JetBrains Mono',monospace;font-size:.65rem;font-weight:700;color:#4cff9a;}
-.bonline .lbl{font-size:.6rem;color:rgba(76,255,154,.45);font-weight:600;}
 
-/* ── PAGE ── */
-.page{max-width:420px;margin:0 auto;padding:0 11px;position:relative;z-index:1;}
-@keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+/* ── PAGE LAYOUT ── */
+.page{max-width:420px;margin:0 auto;padding:0 12px;position:relative;z-index:1;}
+@keyframes up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
 
-/* ── LOGIN ── */
-#LS{min-height:100vh;display:flex;align-items:center;justify-content:center;
-  padding:calc(var(--bh)+20px) 13px 80px;animation:up .45s var(--sp) both;}
-.lw{width:100%;max-width:370px;display:flex;flex-direction:column;gap:10px;}
-.lbrand{text-align:center;padding:4px 0;}
-.lico{width:44px;height:44px;border-radius:50%;margin:0 auto 7px;
-  background:var(--l3);border:1px solid var(--st2);
-  display:flex;align-items:center;justify-content:center;}
-.lico svg{width:18px;height:18px;stroke:var(--g1);stroke-width:1.8;fill:none;}
-.lsup{font-size:.47rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--ink3);margin-bottom:2px;}
-.lh{font-size:1.05rem;font-weight:700;color:var(--ink);}
-.lh em{font-style:normal;color:transparent;background:linear-gradient(135deg,var(--g1),var(--g2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+/* ── SURFACE SYSTEM ── */
+.s-glass{
+  background:rgba(10,10,15,.8);
+  border:1px solid var(--stroke2);
+  border-radius:var(--r);
+  backdrop-filter:blur(10px);
+  box-shadow:0 4px 24px rgba(0,0,0,.4),inset 0 1px 0 rgba(200,168,75,.05);
+}
+.s-dark{
+  background:var(--l1);
+  border:1px solid var(--stroke);
+  border-radius:var(--r);
+  box-shadow:0 2px 12px rgba(0,0,0,.3);
+}
 
-/* tabs */
-.tabs{display:flex;background:var(--l2);border:1px solid var(--st);border-radius:var(--rx);padding:3px;gap:3px;}
-.tab{flex:1;padding:8px 4px;border-radius:var(--rs);text-align:center;font-size:.68rem;font-weight:700;
-  color:var(--ink3);cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:4px;}
-.tab svg{width:11px;height:11px;stroke:currentColor;stroke-width:1.8;fill:none;}
-.tab.on{background:rgba(200,168,75,.1);color:var(--g2);border:1px solid rgba(200,168,75,.25);}
-.tab:active{transform:scale(.95);}
+/* ══════════════ LOGIN ══════════════ */
+#LOGIN_SCREEN{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  padding:100px 0 80px;animation:up .6s var(--spring) both;
+}
+.login-wrap{width:100%;max-width:360px;display:flex;flex-direction:column;gap:16px;}
 
-/* form */
-.fs{display:none;flex-direction:column;}
-.fs.show{display:flex;}
-.fc{background:var(--l1);border:1px solid var(--st);border-radius:var(--r);overflow:hidden;}
-.fr{display:flex;align-items:stretch;border-bottom:1px solid var(--st);position:relative;}
-.fr:last-of-type{border-bottom:none;}
-.fr::before{content:'';position:absolute;right:0;top:0;bottom:0;width:0;background:var(--g1);transition:width .15s;}
-.fr:focus-within::before{width:2px;}
-.fi{width:42px;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--st);background:var(--l2);}
-.fi svg{width:13px;height:13px;stroke:var(--ink3);stroke-width:1.6;fill:none;transition:stroke .2s;}
-.fr:focus-within .fi svg{stroke:var(--g1);}
-.fb{flex:1;padding:10px 11px;}
-.fl{font-size:.44rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:2px;transition:color .2s;}
-.fr:focus-within .fl{color:var(--g1);}
-.fin{background:transparent;border:none;outline:none;font-family:'Cairo',sans-serif;font-size:.86rem;font-weight:600;color:var(--ink);width:100%;}
-.fin::placeholder{color:var(--ink3);font-weight:400;font-size:.74rem;}
-.dinfo{display:flex;gap:8px;padding:11px 12px;background:rgba(200,168,75,.025);border-bottom:1px solid var(--st);}
-.dinfo svg{width:13px;height:13px;stroke:var(--g1);stroke-width:1.6;fill:none;flex-shrink:0;margin-top:2px;}
-.dinfo p{font-size:.65rem;color:var(--ink2);line-height:1.8;}
-.dinfo strong{color:var(--g2);display:block;font-size:.67rem;margin-bottom:1px;}
+.login-hero{text-align:center;padding:24px 0 8px;}
+.login-emblem{
+  width:64px;height:64px;border-radius:20px;margin:0 auto 14px;
+  background:linear-gradient(135deg,var(--l3),var(--l5));
+  border:1px solid var(--stroke3);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 0 6px rgba(200,168,75,.04),0 0 32px rgba(200,168,75,.15),0 8px 24px rgba(0,0,0,.5);
+  position:relative;
+}
+.login-emblem::before{
+  content:'';position:absolute;inset:-1px;border-radius:21px;
+  background:linear-gradient(135deg,rgba(200,168,75,.3),transparent,rgba(200,168,75,.1));
+  pointer-events:none;
+}
+.login-emblem svg{width:26px;height:26px;stroke:var(--g1);stroke-width:1.8;fill:none;}
+.login-eyebrow{font-size:.52rem;font-weight:700;letter-spacing:4px;text-transform:uppercase;color:var(--ink3);margin-bottom:8px;}
+.login-headline{font-family:'Cinzel',serif;font-size:1.3rem;font-weight:700;color:var(--ink);line-height:1.4;}
+.login-headline em{font-style:normal;color:transparent;background:linear-gradient(135deg,var(--g1),var(--g2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
 
-/* login button */
-.bw{padding:11px;}
-.lbtn{width:100%;padding:12px;border:none;border-radius:var(--rs);
-  background:linear-gradient(135deg,var(--g3),var(--g1) 50%,var(--g2));
-  color:#1a0e00;font-family:'Cairo',sans-serif;font-size:.84rem;font-weight:900;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;
-  box-shadow:0 4px 16px rgba(200,168,75,.22);position:relative;overflow:hidden;
-  transition:transform .18s var(--sp),box-shadow .18s;}
-.lbtn::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.12),transparent 55%);}
-.lbtn::after{content:'';position:absolute;top:0;left:-110%;width:50%;height:100%;
-  background:linear-gradient(105deg,transparent,rgba(255,255,255,.16),transparent);
-  animation:sh 4s ease-in-out infinite;}
-@keyframes sh{0%,100%{left:-110%}50%{left:150%}}
-.lbtn svg,.lbtn span{position:relative;z-index:1;}
-.lbtn svg{width:13px;height:13px;stroke:currentColor;stroke-width:2.2;fill:none;}
-.lbtn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(200,168,75,.3);}
-.lbtn:active{transform:scale(.97);}
-.lbtn:disabled{opacity:.5;pointer-events:none;}
-.bspin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(26,14,0,.2);border-top-color:#1a0e00;animation:rspin .7s linear infinite;display:none;z-index:1;}
-.lbtn.loading .bspin{display:block;}
-.lbtn.loading .btxt{display:none;}
-@keyframes rspin{to{transform:rotate(360deg)}}
-.err{display:flex;align-items:flex-start;gap:7px;
-  background:rgba(230,0,0,.04);border:1px solid rgba(230,0,0,.16);
-  border-radius:var(--rs);padding:9px 11px;
-  font-size:.66rem;color:#ff8a80;font-weight:600;line-height:1.7;animation:up .3s both;}
-.err svg{width:12px;height:12px;stroke:#ff6060;stroke-width:2;fill:none;flex-shrink:0;margin-top:2px;}
-.lnote{text-align:center;font-size:.55rem;color:var(--ink3);}
+/* login card */
+.login-card{overflow:hidden;}
+.login-card-header{
+  padding:14px 18px 12px;border-bottom:1px solid var(--stroke);
+  background:linear-gradient(180deg,rgba(200,168,75,.04),transparent);
+  display:flex;align-items:center;gap:8px;
+}
+.lch-dot{width:6px;height:6px;border-radius:50%;background:var(--g1);box-shadow:0 0 6px var(--g2);}
+.lch-txt{font-size:.62rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);}
 
-/* ── APP ── */
+.lf-field{
+  display:flex;align-items:stretch;
+  border-bottom:1px solid var(--stroke);
+  transition:background .2s;position:relative;overflow:hidden;
+}
+.lf-field:last-of-type{border-bottom:none;}
+.lf-field:focus-within{background:rgba(200,168,75,.02);}
+.lf-field::after{
+  content:'';position:absolute;right:0;top:0;bottom:0;width:0;
+  background:linear-gradient(0deg,var(--g1),var(--g2));
+  transition:width .25s var(--ease);
+}
+.lf-field:focus-within::after{width:2px;}
+
+.lf-ic{
+  width:52px;display:flex;align-items:center;justify-content:center;
+  border-left:1px solid var(--stroke);background:rgba(0,0,0,.2);
+}
+.lf-ic svg{width:15px;height:15px;stroke:var(--ink3);stroke-width:1.7;fill:none;transition:stroke .25s;}
+.lf-field:focus-within .lf-ic svg{stroke:var(--g1);}
+.lf-body{flex:1;padding:12px 14px;display:flex;flex-direction:column;gap:2px;}
+.lf-lbl{font-size:.48rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);transition:color .25s;}
+.lf-field:focus-within .lf-lbl{color:var(--g1);}
+.lf-inp{
+  background:transparent;border:none;outline:none;
+  font-family:'Cairo',sans-serif;font-size:.9rem;font-weight:600;color:var(--ink);
+}
+.lf-inp::placeholder{color:var(--ink3);font-weight:400;font-size:.78rem;}
+
+.login-submit{padding:14px 16px 16px;}
+.btn-submit{
+  width:100%;padding:13px;border:none;border-radius:var(--r-sm);cursor:pointer;
+  background:linear-gradient(135deg,var(--g3) 0%,var(--g1) 40%,var(--g2) 60%,var(--g1) 80%,var(--g3) 100%);
+  background-size:300% 100%;
+  color:#1a0c00;font-family:'Cairo',sans-serif;font-size:.88rem;font-weight:900;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  box-shadow:0 4px 20px rgba(200,168,75,.3),0 1px 0 rgba(255,255,255,.1) inset;
+  transition:transform .2s var(--spring),box-shadow .25s,background-position .4s;
+  position:relative;overflow:hidden;
+}
+.btn-submit::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.12) 0%,transparent 50%);}
+.btn-submit:hover{transform:translateY(-2px);box-shadow:0 8px 32px rgba(200,168,75,.4);background-position:100% center;}
+.btn-submit:active{transform:scale(.97);}
+.btn-submit:disabled{opacity:.5;cursor:wait;}
+.btn-submit svg{width:14px;height:14px;stroke:currentColor;stroke-width:2.2;fill:none;position:relative;z-index:1;}
+.btn-submit span{position:relative;z-index:1;}
+.btn-spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(26,12,0,.2);border-top-color:#1a0c00;animation:rot .7s linear infinite;display:none;position:relative;z-index:1;}
+.btn-submit.loading .btn-spin{display:block;}
+.btn-submit.loading .btn-label{display:none;}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+.err-box{
+  display:flex;align-items:center;gap:9px;
+  background:rgba(230,0,0,.05);border:1px solid rgba(230,0,0,.18);
+  border-radius:var(--r-xs);padding:11px 14px;
+  font-size:.7rem;color:#ff7070;font-weight:600;
+  animation:up .3s var(--spring) both;
+}
+.err-box svg{width:13px;height:13px;stroke:#ff5555;stroke-width:2;fill:none;flex-shrink:0;}
+
+.login-note{
+  text-align:center;font-size:.58rem;color:var(--ink3);
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.login-note::before,.login-note::after{content:'';display:block;height:1px;width:24px;background:var(--stroke2);}
+
+/* ══════════════ APP ══════════════ */
 #APP{display:none;}
-#APP.on{display:block;}
-.ab{padding-top:calc(var(--bh)+12px);padding-bottom:82px;}
+#APP.active{display:block;}
+.app-body{padding-top:100px;padding-bottom:90px;}
 
 /* user bar */
-.ubar{display:flex;align-items:center;justify-content:space-between;
-  padding:7px 11px;margin-bottom:10px;
-  background:var(--l1);border:1px solid var(--st);border-radius:var(--rs);}
-.ul{display:flex;align-items:center;gap:6px;}
-.udot{width:5px;height:5px;border-radius:50%;background:var(--g2);}
-.unum{font-family:'JetBrains Mono',monospace;font-size:.74rem;font-weight:700;color:var(--g2);}
-.upill{display:flex;align-items:center;gap:4px;
-  background:rgba(76,255,154,.05);border:1px solid rgba(76,255,154,.12);
-  border-radius:16px;padding:3px 8px;}
-.updot{width:4px;height:4px;border-radius:50%;background:#4cff9a;animation:blink 2s ease-in-out infinite;}
-.upn{font-family:'JetBrains Mono',monospace;font-size:.6rem;font-weight:700;color:#4cff9a;}
-.upl{font-size:.56rem;color:rgba(76,255,154,.42);font-weight:600;}
-.bout{display:flex;align-items:center;gap:3px;padding:4px 9px;
-  border:1px solid rgba(230,0,0,.14);border-radius:var(--rs);
-  font-family:'Cairo',sans-serif;font-size:.61rem;font-weight:700;
-  color:rgba(230,0,0,.38);cursor:pointer;transition:all .18s;text-decoration:none;background:transparent;}
-.bout:hover{color:#ff6060;border-color:rgba(230,0,0,.3);}
-.bout svg{width:8px;height:8px;stroke:currentColor;stroke-width:2;fill:none;}
+.user-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 14px;margin-bottom:14px;
+  background:var(--l1);border:1px solid var(--stroke);border-radius:var(--r-xs);
+  box-shadow:0 2px 12px rgba(0,0,0,.3);
+}
+.ub-left{display:flex;align-items:center;gap:10px;}
+.ub-status{position:relative;width:8px;height:8px;}
+.ub-dot{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 0 rgba(34,197,94,.4);animation:statusPing 2s ease-in-out infinite;}
+@keyframes statusPing{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 6px rgba(34,197,94,0)}}
+.ub-num{font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700;color:var(--g2);}
+.ub-logout{
+  display:flex;align-items:center;gap:5px;background:transparent;
+  border:1px solid rgba(230,0,0,.15);border-radius:6px;
+  padding:5px 12px;font-family:'Cairo',sans-serif;font-size:.64rem;font-weight:700;
+  color:rgba(230,0,0,.45);cursor:pointer;transition:all .2s;
+  text-decoration:none;
+}
+.ub-logout:hover{color:#ff6b6b;border-color:rgba(230,0,0,.35);background:rgba(230,0,0,.04);}
+.ub-logout svg{width:10px;height:10px;stroke:currentColor;stroke-width:2;fill:none;}
 
-/* ── SEARCH ── */
-#US{display:flex;flex-direction:column;gap:10px;animation:up .4s var(--sp) both;}
-.scard{overflow:hidden;background:var(--l1);border:1px solid var(--st);border-radius:var(--r);}
-.sh{padding:7px 12px 2px;font-size:.5rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-  color:var(--ink3);display:flex;align-items:center;gap:5px;}
-.sh::before{content:'';display:block;width:10px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
+/* search screen */
+#US{display:flex;flex-direction:column;gap:14px;animation:up .5s var(--spring) both;}
+.us-heading{padding:8px 2px 6px;}
+.us-eyebrow{
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:.52rem;font-weight:700;letter-spacing:3.5px;text-transform:uppercase;
+  color:var(--g1);opacity:.85;margin-bottom:10px;
+}
+.us-eyebrow::before,.us-eyebrow::after{content:'';display:block;width:5px;height:1px;background:var(--g1);}
+.us-title{font-family:'Cinzel',serif;font-size:1.55rem;font-weight:700;line-height:1.35;margin-bottom:6px;}
+.us-title em{font-style:normal;color:transparent;background:linear-gradient(135deg,var(--g1),var(--g2),var(--g1));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.us-sub{font-size:.72rem;color:var(--ink2);line-height:1.85;}
 
-/* units input */
-.urow{display:flex;align-items:stretch;border-bottom:1px solid var(--st);position:relative;}
-.urow::before{content:'';position:absolute;right:0;top:0;bottom:0;width:0;background:var(--g1);transition:width .15s;}
-.urow:focus-within::before{width:2px;}
-.uico{width:44px;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--st);background:var(--l2);}
-.uico svg{width:15px;height:15px;stroke:var(--ink3);stroke-width:1.6;fill:none;transition:stroke .2s;}
-.urow:focus-within .uico svg{stroke:var(--g1);}
-.uright{flex:1;padding:11px 0;display:flex;flex-direction:column;align-items:center;}
-.ulbl{font-size:.48rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:3px;}
-.uinp{background:transparent;border:none;outline:none;font-family:'JetBrains Mono',monospace;
-  font-size:1.7rem;font-weight:700;color:var(--ink);text-align:center;max-width:140px;}
-.uinp::placeholder{font-family:'Cairo',sans-serif;color:var(--ink3);font-size:.76rem;font-weight:400;}
+/* main search card */
+.search-card{overflow:hidden;}
 
-/* chips */
-.qs{padding:8px 11px 10px;border-bottom:1px solid var(--st);}
-.qlbl{font-size:.48rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-  color:var(--ink3);margin-bottom:6px;display:flex;align-items:center;gap:5px;}
-.qlbl::before{content:'';display:block;width:9px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
-.chips{display:flex;gap:4px;}
-.chip{flex:1;padding:6px 2px;background:var(--l2);border:1px solid var(--st);border-radius:var(--rs);
-  text-align:center;font-family:'JetBrains Mono',monospace;font-size:.78rem;font-weight:700;
-  color:var(--ink2);cursor:pointer;transition:all .18s var(--sp);}
-.chip:hover{border-color:var(--st2);color:var(--g2);}
-.chip.on{background:rgba(200,168,75,.1);border-color:rgba(200,168,75,.35);color:var(--g2);}
-.chip:active{transform:scale(.9);}
+/* section label */
+.sc-label{
+  padding:11px 16px 4px;
+  display:flex;align-items:center;gap:8px;
+  font-size:.52rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);
+}
+.sc-label::before{content:'';display:block;width:16px;height:1px;background:linear-gradient(90deg,transparent,var(--g1) 80%);}
+.sc-divider{height:1px;background:linear-gradient(90deg,transparent,var(--stroke2) 30%,var(--stroke2) 70%,transparent);}
+
+/* units field */
+.unit-field{
+  display:flex;align-items:stretch;border-bottom:1px solid var(--stroke);
+  position:relative;transition:background .2s;
+}
+.unit-field:focus-within{background:rgba(200,168,75,.02);}
+.unit-field::after{content:'';position:absolute;right:0;top:0;bottom:0;width:0;background:linear-gradient(0deg,var(--g1),var(--g2));transition:width .25s;}
+.unit-field:focus-within::after{width:2px;}
+.uf-ic{
+  width:54px;display:flex;align-items:center;justify-content:center;
+  border-left:1px solid var(--stroke);background:rgba(0,0,0,.15);
+}
+.uf-ic svg{width:18px;height:18px;fill:none;transition:stroke .25s;}
+.unit-field:focus-within .uf-ic svg{stroke:var(--g1) !important;}
+.uf-body{flex:1;padding:14px 0;display:flex;flex-direction:column;align-items:center;}
+.uf-lbl{font-family:'Cinzel',serif;font-size:.52rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:4px;transition:color .25s;}
+.unit-field:focus-within .uf-lbl{color:var(--g1);}
+.uf-inp{
+  background:transparent;border:none;outline:none;
+  font-family:'Bebas Neue',sans-serif;font-size:2.2rem;letter-spacing:3px;
+  color:var(--ink);text-align:center;max-width:180px;
+}
+.uf-inp::placeholder{font-family:'Cairo',sans-serif;color:var(--ink3);font-size:.83rem;font-weight:400;letter-spacing:0;}
+
+/* quick chips */
+.chips-area{padding:12px 16px 14px;border-bottom:1px solid var(--stroke);}
+.chips-lbl{font-size:.52rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:9px;display:flex;align-items:center;gap:7px;}
+.chips-lbl::before{content:'';display:block;width:14px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
+.chips-row{display:flex;gap:6px;}
+.chip{
+  flex:1;padding:9px 4px;
+  background:rgba(0,0,0,.25);border:1px solid var(--stroke);
+  border-radius:8px;text-align:center;
+  font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:2px;color:var(--ink2);
+  cursor:pointer;transition:all .2s var(--spring);
+}
+.chip:hover{border-color:var(--stroke2);color:var(--g2);}
+.chip.sel{background:var(--g4);border-color:rgba(200,168,75,.4);color:var(--g2);}
+.chip:active{transform:scale(.88);}
 
 /* charge mode */
-.cms{padding:10px 11px;border-bottom:1px solid var(--st);}
-.cml{font-size:.48rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-  color:var(--ink3);margin-bottom:7px;display:flex;align-items:center;gap:5px;}
-.cml::before{content:'';display:block;width:9px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
-.cmbs{display:flex;gap:6px;}
-.cmb{flex:1;padding:11px 5px;background:var(--l2);border:1px solid var(--st);
-  border-radius:var(--rx);text-align:center;cursor:pointer;transition:all .18s var(--sp);}
-.cmb.ol.on{background:rgba(230,0,0,.05);border-color:rgba(230,0,0,.28);}
-.cmb.dl.on{background:rgba(200,168,75,.07);border-color:rgba(200,168,75,.28);}
-.cmb:active{transform:scale(.96);}
-.cmico{width:24px;height:24px;margin:0 auto 5px;border-radius:50%;display:flex;align-items:center;justify-content:center;}
-.cmico svg{width:12px;height:12px;stroke-width:1.8;fill:none;}
-.cmb.ol .cmico{background:rgba(230,0,0,.07);border:1px solid rgba(230,0,0,.15);}
-.cmb.ol .cmico svg{stroke:var(--red);}
-.cmb.dl .cmico{background:rgba(200,168,75,.07);border:1px solid rgba(200,168,75,.15);}
-.cmb.dl .cmico svg{stroke:var(--g2);}
-.cmb strong{display:block;font-size:.68rem;font-weight:700;color:var(--ink);margin-bottom:1px;}
-.cmb small{font-size:.54rem;color:var(--ink3);}
+.mode-area{padding:14px 16px;border-bottom:1px solid var(--stroke);}
+.mode-lbl{font-size:.52rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:10px;display:flex;align-items:center;gap:7px;}
+.mode-lbl::before{content:'';display:block;width:14px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
+.mode-btns{display:flex;gap:9px;}
+.mode-btn{
+  flex:1;padding:14px 10px;
+  background:rgba(0,0,0,.2);border:1px solid var(--stroke);
+  border-radius:var(--r-sm);text-align:center;cursor:pointer;
+  transition:all .22s var(--spring);position:relative;overflow:hidden;
+}
+.mode-btn::before{content:'';position:absolute;inset:0;opacity:0;transition:opacity .3s;}
+.mode-btn.online::before{background:radial-gradient(ellipse at 50% 0%,rgba(230,0,0,.08),transparent 70%);}
+.mode-btn.dial::before{background:radial-gradient(ellipse at 50% 0%,rgba(200,168,75,.08),transparent 70%);}
+.mode-btn.sel::before{opacity:1;}
+.mode-btn.online.sel{border-color:rgba(230,0,0,.3);}
+.mode-btn.dial.sel{border-color:rgba(200,168,75,.3);}
+.mode-btn:active{transform:scale(.95);}
+.mb-icon{
+  width:30px;height:30px;border-radius:50%;margin:0 auto 8px;
+  display:flex;align-items:center;justify-content:center;
+}
+.mode-btn.online .mb-icon{background:rgba(230,0,0,.08);border:1px solid rgba(230,0,0,.15);}
+.mode-btn.online .mb-icon svg{stroke:var(--red);width:15px;height:15px;stroke-width:2;fill:none;}
+.mode-btn.dial .mb-icon{background:rgba(200,168,75,.08);border:1px solid rgba(200,168,75,.15);}
+.mode-btn.dial .mb-icon svg{stroke:var(--g2);width:15px;height:15px;stroke-width:2;fill:none;}
+.mb-title{display:block;font-family:'Cairo',sans-serif;font-size:.75rem;font-weight:700;color:var(--ink);margin-bottom:2px;}
+.mb-sub{display:block;font-size:.58rem;color:var(--ink3);}
 
-/* target */
-.tgs{padding:0 11px;max-height:0;overflow:hidden;transition:max-height .3s var(--ease),padding .28s;}
-.tgs.open{max-height:185px;padding:10px 11px;}
-.tgl{font-size:.48rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-  color:var(--ink3);margin-bottom:6px;display:flex;align-items:center;gap:5px;}
-.tgl::before{content:'';display:block;width:9px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
-.tgbs{display:flex;gap:5px;}
-.tgb{flex:1;padding:7px 4px;background:var(--l2);border:1px solid var(--st);
-  border-radius:var(--rs);text-align:center;font-size:.65rem;font-weight:700;
-  color:var(--ink2);cursor:pointer;transition:all .18s var(--sp);}
-.tgb.on{background:rgba(200,168,75,.08);border-color:rgba(200,168,75,.3);color:var(--g2);}
-.tgb:active{transform:scale(.93);}
-.otf{margin-top:7px;display:none;flex-direction:column;gap:4px;}
-.otf.show{display:flex;}
-.ofl{display:flex;align-items:stretch;border:1px solid var(--st);border-radius:var(--rs);overflow:hidden;}
-.ofic{width:34px;display:flex;align-items:center;justify-content:center;background:var(--l2);border-left:1px solid var(--st);}
-.ofic svg{width:11px;height:11px;stroke:var(--ink3);stroke-width:1.6;fill:none;}
-.ofl input{flex:1;background:transparent;border:none;outline:none;padding:7px 10px;
-  font-family:'Cairo',sans-serif;font-size:.78rem;font-weight:600;color:var(--ink);}
-.ofl input::placeholder{color:var(--ink3);font-size:.7rem;font-weight:400;}
+/* online target */
+.target-area{
+  overflow:hidden;max-height:0;transition:max-height .35s var(--ease),padding .3s;
+  padding:0 16px;border-bottom:1px solid var(--stroke);
+}
+.target-area.open{max-height:240px;padding:14px 16px;}
+.target-lbl{font-size:.52rem;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:9px;display:flex;align-items:center;gap:7px;}
+.target-lbl::before{content:'';display:block;width:14px;height:1px;background:linear-gradient(90deg,transparent,var(--g1));}
+.target-btns{display:flex;gap:7px;}
+.target-btn{
+  flex:1;padding:10px;background:rgba(0,0,0,.2);
+  border:1px solid var(--stroke);border-radius:8px;
+  text-align:center;font-family:'Cairo',sans-serif;font-size:.72rem;
+  font-weight:700;color:var(--ink2);cursor:pointer;transition:all .2s var(--spring);
+}
+.target-btn.sel{background:var(--g4);border-color:rgba(200,168,75,.35);color:var(--g2);}
+.target-btn:active{transform:scale(.92);}
+.other-fields{margin-top:10px;display:none;flex-direction:column;gap:6px;}
+.other-fields.show{display:flex;}
+.of-wrap{
+  display:flex;align-items:stretch;
+  background:rgba(0,0,0,.2);border:1px solid var(--stroke);
+  border-radius:8px;overflow:hidden;
+}
+.of-ic{width:38px;display:flex;align-items:center;justify-content:center;border-left:1px solid var(--stroke);background:rgba(0,0,0,.15);}
+.of-ic svg{width:13px;height:13px;stroke:var(--ink3);stroke-width:1.7;fill:none;}
+.of-wrap input{
+  flex:1;background:transparent;border:none;outline:none;
+  padding:10px 12px;font-family:'Cairo',sans-serif;
+  font-size:.82rem;font-weight:600;color:var(--ink);
+}
+.of-wrap input::placeholder{color:var(--ink3);font-weight:400;font-size:.75rem;}
 
-/* go */
-.gos{padding:11px;}
-.gobtn{width:100%;padding:13px;border:none;border-radius:var(--rx);
-  background:linear-gradient(135deg,var(--red2),var(--red) 60%,#ff1818);
-  color:#fff;font-family:'Cairo',sans-serif;font-size:.86rem;font-weight:900;
-  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;
-  box-shadow:0 4px 20px rgba(230,0,0,.26);position:relative;overflow:hidden;
-  transition:transform .18s var(--sp),box-shadow .18s;}
-.gobtn::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.08),transparent 50%);}
-.gobtn::after{content:'';position:absolute;top:0;left:-110%;width:50%;height:100%;
-  background:linear-gradient(105deg,transparent,rgba(255,255,255,.09),transparent);animation:sh 4s ease-in-out infinite;}
-.gobtn svg,.gobtn span{position:relative;z-index:1;}
-.gobtn svg{width:14px;height:14px;stroke:#fff;stroke-width:2.2;fill:none;}
-.gobtn:hover{transform:translateY(-1px);box-shadow:0 7px 24px rgba(230,0,0,.35);}
-.gobtn:active{transform:scale(.97);}
+/* GO */
+.go-area{padding:15px 16px 16px;}
+.btn-go{
+  width:100%;padding:15px;border:none;border-radius:var(--r-sm);cursor:pointer;
+  background:linear-gradient(135deg,var(--red2),var(--red),#ff2020,var(--red));
+  background-size:300% 100%;
+  color:#fff;font-family:'Cairo',sans-serif;font-size:.9rem;font-weight:900;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  box-shadow:0 5px 28px rgba(230,0,0,.35),0 1px 0 rgba(255,255,255,.08) inset;
+  transition:transform .2s var(--spring),box-shadow .25s,background-position .4s;
+  position:relative;overflow:hidden;
+}
+.btn-go::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 50%);}
+.btn-go:hover{transform:translateY(-2px);box-shadow:0 10px 38px rgba(230,0,0,.45);background-position:100% center;}
+.btn-go:active{transform:scale(.97);}
+.btn-go svg{width:17px;height:17px;stroke:#fff;stroke-width:2.2;fill:none;position:relative;z-index:1;}
+.btn-go span{position:relative;z-index:1;}
 
-/* ── CARDS SCREEN ── */
-#CS{display:none;flex-direction:column;gap:8px;animation:up .3s var(--sp) both;}
-.csbar{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;
-  background:var(--l1);border:1px solid var(--st);border-radius:var(--r);}
-.csi{font-size:.74rem;color:var(--ink2);}
-.csi strong{color:var(--g2);}
-.csbk{display:flex;align-items:center;gap:3px;background:var(--l3);border:1px solid var(--st);
-  border-radius:var(--rs);padding:5px 10px;font-size:.62rem;font-weight:700;color:var(--ink2);
-  cursor:pointer;transition:all .18s;}
-.csbk:hover{color:var(--ink);}
-.csbk svg{width:8px;height:8px;stroke:currentColor;stroke-width:2.5;fill:none;}
+/* ══════════════ CARDS SCREEN ══════════════ */
+#CS{display:none;flex-direction:column;gap:11px;animation:up .4s var(--spring) both;}
 
-/* timer */
-.tc{padding:11px 14px;background:var(--l1);border:1px solid var(--st);border-radius:var(--r);}
-.tt{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-.ttl{display:flex;align-items:center;gap:6px;}
-.trd{width:5px;height:5px;border-radius:50%;background:var(--red);animation:ping 1.5s ease-in-out infinite;}
-@keyframes ping{0%{box-shadow:0 0 0 0 rgba(230,0,0,.4)}70%{box-shadow:0 0 0 6px transparent}100%{box-shadow:0 0 0 0 transparent}}
-.ttxt{font-size:.62rem;color:var(--ink2);}
-.tnum{font-family:'JetBrains Mono',monospace;font-size:1.8rem;font-weight:700;color:var(--ink);transition:color .3s;}
-.tnum.hot{color:var(--red);}
-.tbar{height:2px;background:var(--l4);border-radius:2px;overflow:hidden;}
-.tprog{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--g3),var(--g2));transition:width 1s linear;}
+.cs-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:11px 14px;
+}
+.cs-info{font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--ink2);}
+.cs-info strong{color:var(--g2);}
+.cs-back{
+  display:flex;align-items:center;gap:5px;
+  background:var(--l3);border:1px solid var(--stroke);
+  border-radius:7px;padding:6px 13px;
+  font-family:'Cairo',sans-serif;font-size:.68rem;font-weight:700;
+  color:var(--ink2);cursor:pointer;transition:all .2s;
+}
+.cs-back:hover{color:var(--ink);border-color:var(--stroke2);}
+.cs-back svg{width:10px;height:10px;stroke:currentColor;stroke-width:2.5;fill:none;}
+
+/* timer panel */
+.timer-panel{padding:16px 18px;}
+.timer-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+.timer-left-group{display:flex;align-items:center;gap:10px;}
+.live-badge{
+  display:flex;align-items:center;gap:5px;
+  background:rgba(230,0,0,.06);border:1px solid rgba(230,0,0,.15);
+  border-radius:20px;padding:4px 10px;
+}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 0 0 rgba(230,0,0,.4);animation:livePing 1.3s ease-in-out infinite;}
+@keyframes livePing{0%,100%{box-shadow:0 0 0 0 rgba(230,0,0,.4)}50%{box-shadow:0 0 0 6px rgba(230,0,0,0)}}
+.live-txt{font-size:.55rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--red);opacity:.85;}
+
+/* TIMER COUNT WITH USERS BADGE */
+.timer-right{display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
+.timer-num{
+  font-family:'Bebas Neue',sans-serif;font-size:2.6rem;letter-spacing:4px;
+  color:var(--ink);transition:color .3s;line-height:1;
+}
+.timer-num.hot{color:var(--red);}
+.users-badge{
+  display:flex;align-items:center;gap:5px;
+  background:rgba(200,168,75,.06);border:1px solid rgba(200,168,75,.12);
+  border-radius:20px;padding:3px 9px;
+}
+.users-ic svg{width:10px;height:10px;stroke:var(--g1);stroke-width:2;fill:none;}
+.users-count{font-family:'JetBrains Mono',monospace;font-size:.65rem;font-weight:700;color:var(--g1);}
+.users-lbl{font-size:.5rem;color:var(--ink3);}
+
+.timer-track{height:2px;background:var(--l4);border-radius:4px;overflow:hidden;}
+.timer-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--g3),var(--g1),var(--g2));transition:width 1s linear;box-shadow:0 0 6px rgba(200,168,75,.3);}
 
 /* toggle */
-.tgl2{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;
-  cursor:pointer;background:var(--l1);border:1px solid var(--st);border-radius:var(--r);}
-.tgl2 strong{display:block;font-size:.7rem;font-weight:700;color:var(--ink);margin-bottom:1px;}
-.tgl2 small{font-size:.57rem;color:var(--ink2);}
-.sw{position:relative;width:36px;height:20px;flex-shrink:0;}
-.sw input{opacity:0;width:0;height:0;position:absolute;}
-.sw-t{position:absolute;inset:0;border-radius:20px;background:var(--l4);border:1px solid var(--st);cursor:pointer;transition:all .25s;}
-.sw-t::before{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:#555;top:2px;right:2px;box-shadow:0 1px 3px rgba(0,0,0,.5);transition:transform .25s var(--sp),background .25s;}
-.sw input:checked+.sw-t{background:linear-gradient(135deg,var(--g3),var(--g1));border-color:rgba(200,168,75,.25);}
-.sw input:checked+.sw-t::before{transform:translateX(-16px);background:#fff;}
+.tgl-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:13px 16px;cursor:pointer;
+}
+.tgl-info strong{display:block;font-family:'Cinzel',serif;font-size:.75rem;font-weight:700;color:var(--ink);margin-bottom:2px;}
+.tgl-info small{font-size:.6rem;color:var(--ink2);}
+.sw{position:relative;width:40px;height:22px;flex-shrink:0;}
+.sw input{position:absolute;opacity:0;width:0;height:0;}
+.sw-track{
+  position:absolute;inset:0;border-radius:20px;
+  background:var(--l4);border:1px solid var(--stroke);
+  cursor:pointer;transition:all .3s;
+}
+.sw-track::before{
+  content:'';position:absolute;width:16px;height:16px;border-radius:50%;
+  background:#555;top:2px;right:2px;
+  box-shadow:0 1px 4px rgba(0,0,0,.5);
+  transition:transform .3s var(--spring),background .3s;
+}
+.sw input:checked+.sw-track{background:linear-gradient(135deg,var(--g3),var(--g1));border-color:rgba(200,168,75,.3);}
+.sw input:checked+.sw-track::before{transform:translateX(-18px);background:#fff;}
 
-/* ══════════════════════════════════════════
-   كروت جديدة — تصميم horizontal مختلف
-   ══════════════════════════════════════════ */
-.cl{display:flex;flex-direction:column;gap:8px;}
+/* cards */
+.cards-list{display:flex;flex-direction:column;gap:12px;}
 
-.pc{
+.promo-card{
   border-radius:var(--r);
-  background:var(--l1);
-  border:1px solid rgba(255,255,255,.05);
+  position:relative;
+  animation:cardIn .45s var(--spring) both;
+  animation-delay:calc(var(--i,0)*.07s);
+}
+@keyframes cardIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
+
+/* Glass layers */
+.pc-shell{
+  border-radius:var(--r);
   overflow:hidden;
-  position:relative;
-  animation:cardIn .35s var(--sp) both;
-  animation-delay:calc(var(--i,0)*.06s);
-  transition:transform .2s var(--sp),box-shadow .2s;
-}
-.pc:active{transform:scale(.99);}
-
-@keyframes cardIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
-
-/* الشريط الجانبي الملون */
-.pc-stripe{
-  position:absolute;right:0;top:0;bottom:0;width:3px;
-  background:linear-gradient(180deg,transparent,var(--g3) 30%,var(--g2) 60%,transparent);
-  opacity:.5;
-}
-.pc.best .pc-stripe{opacity:1;width:4px;}
-
-/* كارت الأفضل */
-.pc.best{
-  background:linear-gradient(135deg,#0d0d12 0%,rgba(200,168,75,.04) 100%);
-  border-color:rgba(200,168,75,.25);
-  box-shadow:0 2px 20px rgba(200,168,75,.06);
-}
-/* خط ذهبي علوي للأفضل */
-.pc.best::after{
-  content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent 5%,rgba(200,168,75,.5) 40%,rgba(245,208,112,.7) 60%,rgba(200,168,75,.5) 80%,transparent 95%);
-}
-
-/* الجزء العلوي: سيريال + بادجات */
-.pc-top{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:9px 14px 0;
-}
-.pc-serial{
-  font-family:'JetBrains Mono',monospace;
-  font-size:.98rem;font-weight:700;
-  color:var(--ink);letter-spacing:2px;
-}
-.pc-badges{display:flex;align-items:center;gap:5px;}
-.badge-best{
-  font-size:.45rem;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;
-  color:#0a0600;
-  background:linear-gradient(135deg,var(--g1),var(--g2));
-  padding:2px 7px;border-radius:4px;
-}
-.badge-rank{
-  font-family:'JetBrains Mono',monospace;font-size:.55rem;font-weight:700;
-  color:var(--ink3);background:var(--l3);
-  border:1px solid var(--st);padding:2px 6px;border-radius:4px;
-}
-
-/* الوسط: 3 أعمدة Stats */
-.pc-stats{
-  display:flex;align-items:stretch;
-  padding:8px 14px 0;
-  gap:0;
-}
-.pstat{
-  flex:1;display:flex;flex-direction:column;align-items:center;
-  padding:8px 4px;
+  background:linear-gradient(145deg,rgba(14,12,20,.96),rgba(8,8,14,.98));
+  border:1px solid rgba(200,168,75,.12);
+  box-shadow:0 8px 32px rgba(0,0,0,.5),0 1px 0 rgba(200,168,75,.06) inset;
   position:relative;
 }
-.pstat:not(:last-child)::after{
+.promo-card.best .pc-shell{
+  border-color:rgba(200,168,75,.35);
+  box-shadow:0 8px 40px rgba(0,0,0,.6),0 0 0 1px rgba(200,168,75,.1),0 1px 0 rgba(200,168,75,.15) inset;
+}
+/* gold line on top for best */
+.promo-card.best .pc-shell::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1.5px;z-index:5;
+  background:linear-gradient(90deg,transparent 5%,var(--g3) 20%,var(--g2) 50%,var(--g3) 80%,transparent 95%);
+  box-shadow:0 0 12px rgba(200,168,75,.3);
+}
+/* subtle interior gradient */
+.pc-shell::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 70% 50% at 50% -10%,rgba(200,168,75,.04),transparent 70%);
+}
+
+.pc-best-badge{
+  position:absolute;top:12px;left:12px;z-index:10;
+  font-size:.5rem;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;
+  padding:3px 9px;border-radius:4px;color:#1a0800;
+  background:linear-gradient(135deg,var(--g2),var(--g1));
+  box-shadow:0 2px 10px rgba(200,168,75,.4);
+}
+
+.pc-body{position:relative;z-index:2;padding:10px 14px 12px;}
+.pc-best-body{padding-top:22px;}
+
+/* stats row */
+.pc-stats{display:flex;gap:0;margin-bottom:10px;}
+.stat-block{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:8px 6px;position:relative;
+}
+.stat-block:not(:last-child)::after{
   content:'';position:absolute;left:0;top:20%;bottom:20%;width:1px;
-  background:linear-gradient(180deg,transparent,rgba(255,255,255,.06),transparent);
+  background:linear-gradient(0deg,transparent,rgba(255,255,255,.06),transparent);
 }
-.pstat-val{
-  font-family:'JetBrains Mono',monospace;
-  font-size:1.15rem;font-weight:700;
-  line-height:1;margin-bottom:3px;
+.stat-icon{
+  width:26px;height:26px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;margin-bottom:4px;
 }
-.pstat-val.v-gold{color:var(--g2);}
-.pstat-val.v-red{color:#ff7070;}
-.pstat-val.v-blue{color:#7eb3ff;}
-.pstat-lbl{
-  font-size:.42rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;
-  color:var(--ink3);
-}
+.stat-icon svg{width:12px;height:12px;stroke-width:1.8;fill:none;}
+.si-amount .stat-icon{background:rgba(255,138,128,.06);border:1px solid rgba(255,138,128,.12);}
+.si-amount .stat-icon svg{stroke:#ff9090;}
+.si-gift .stat-icon{background:rgba(200,168,75,.08);border:1px solid rgba(200,168,75,.15);}
+.si-gift .stat-icon svg{stroke:var(--g2);}
+.si-remain .stat-icon{background:rgba(130,177,255,.06);border:1px solid rgba(130,177,255,.12);}
+.si-remain .stat-icon svg{stroke:#90b8ff;}
 
-/* الجزء السفلي: أزرار */
-.pc-actions{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:8px 12px 9px;
-  border-top:1px solid rgba(255,255,255,.04);
-  margin-top:6px;
-}
-.pc-copy{
-  display:flex;align-items:center;gap:4px;
-  padding:5px 10px;
-  background:var(--l3);border:1px solid var(--st);border-radius:var(--rs);
-  font-size:.6rem;font-weight:700;color:var(--ink3);
-  cursor:pointer;transition:all .18s var(--sp);
-}
-.pc-copy svg{width:9px;height:9px;stroke:currentColor;stroke-width:2;fill:none;}
-.pc-copy:hover{color:var(--g2);border-color:rgba(200,168,75,.3);}
-.pc-copy:active{transform:scale(.9);}
+.stat-val{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:2px;color:#fff;line-height:1;}
+.stat-lbl{font-size:.44rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:rgba(255,255,255,.25);}
 
-.bcharge{
-  display:inline-flex;align-items:center;gap:5px;
-  padding:6px 14px;
-  background:linear-gradient(135deg,rgba(230,0,0,.15),rgba(230,0,0,.08));
-  border:1px solid rgba(230,0,0,.3);border-radius:14px;
-  font-family:'Cairo',sans-serif;font-size:.68rem;font-weight:700;color:#ff8a80;
-  cursor:pointer;transition:all .2s var(--sp);
+/* serial */
+.serial-row{
+  display:flex;align-items:center;justify-content:center;
+  gap:8px;margin-bottom:9px;
 }
-.bcharge svg{width:10px;height:10px;stroke:currentColor;stroke-width:2;fill:none;}
-.bcharge:hover{background:rgba(230,0,0,.22);box-shadow:0 2px 12px rgba(230,0,0,.2);}
-.bcharge:active{transform:scale(.94);}
-.bcharge.loading{opacity:.4;pointer-events:none;}
+.serial-pill{
+  display:flex;align-items:center;gap:0;
+  background:rgba(0,0,0,.4);border:1px solid rgba(200,168,75,.1);
+  border-radius:10px;overflow:hidden;
+}
+.sn-code{
+  font-family:'JetBrains Mono',monospace;font-size:.9rem;font-weight:700;
+  color:#fff;letter-spacing:3px;padding:7px 12px;
+}
+.sn-copy{
+  width:34px;height:100%;display:flex;align-items:center;justify-content:center;
+  background:rgba(200,168,75,.04);border-left:1px solid rgba(200,168,75,.08);
+  cursor:pointer;transition:all .2s var(--spring);padding:7px 0;
+}
+.sn-copy svg{width:12px;height:12px;stroke:rgba(200,168,75,.35);stroke-width:2;fill:none;}
+.sn-copy:hover{background:rgba(200,168,75,.12);border-color:rgba(200,168,75,.25);}
+.sn-copy:active{transform:scale(.85);}
 
-.bdial{
-  display:inline-flex;align-items:center;gap:5px;text-decoration:none;
-  padding:6px 14px;
-  background:rgba(200,168,75,.07);
-  border:1px solid rgba(200,168,75,.2);border-radius:14px;
-  font-family:'Cairo',sans-serif;font-size:.68rem;font-weight:700;color:rgba(200,168,75,.7);
+/* action row */
+.pc-actions{display:flex;justify-content:center;gap:8px;}
+.btn-redeem{
+  display:none;align-items:center;gap:6px;
+  padding:7px 16px;border-radius:20px;border:1px solid rgba(230,0,0,.25);
+  background:rgba(230,0,0,.07);color:#ff8888;
+  font-family:'Cairo',sans-serif;font-size:.7rem;font-weight:700;
+  cursor:pointer;transition:all .2s var(--spring);
+}
+.btn-redeem svg{width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;}
+.btn-redeem:hover{background:rgba(230,0,0,.14);border-color:rgba(230,0,0,.4);}
+.btn-redeem.loading{opacity:.5;pointer-events:none;}
+.btn-dial{
+  display:none;align-items:center;gap:6px;
+  text-decoration:none;padding:7px 16px;border-radius:20px;
+  border:1px solid rgba(200,168,75,.12);background:rgba(200,168,75,.04);
+  color:rgba(200,168,75,.55);font-family:'Cairo',sans-serif;font-size:.7rem;font-weight:700;
   transition:all .2s;
 }
-.bdial svg{width:10px;height:10px;stroke:currentColor;stroke-width:2;fill:none;}
-.bdial:hover{background:rgba(200,168,75,.13);color:var(--g2);}
+.btn-dial svg{width:11px;height:11px;stroke:currentColor;stroke-width:2;fill:none;}
+.btn-dial:hover{color:rgba(200,168,75,.85);border-color:rgba(200,168,75,.3);}
 
-/* loading/empty */
-.ls{display:flex;flex-direction:column;align-items:center;gap:8px;
-  padding:36px 16px;background:var(--l1);border:1px solid var(--st);border-radius:var(--r);}
-.spinner{width:24px;height:24px;border-radius:50%;border:2px solid var(--st);
-  border-top-color:var(--g1);animation:rspin .8s linear infinite;}
-.slbl{font-size:.65rem;color:var(--ink2);}
-.es{text-align:center;padding:28px 16px;font-size:.72rem;color:var(--ink2);
-  background:var(--l1);border:1px solid var(--st);border-radius:var(--r);}
-.es svg{width:20px;height:20px;stroke:var(--ink3);stroke-width:1.5;fill:none;margin-bottom:7px;display:block;margin-inline:auto;}
+/* ── NAV ── */
+.bnav{
+  position:fixed;bottom:0;left:0;right:0;z-index:200;
+  display:flex;justify-content:space-around;align-items:center;
+  padding:10px 0 20px;
+  background:rgba(5,5,8,.96);backdrop-filter:blur(20px);
+  border-top:1px solid var(--stroke2);
+}
+.bnav a{
+  text-decoration:none;color:var(--ink3);
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:5px 20px;border-radius:10px;transition:all .2s var(--spring);
+}
+.bnav a:hover{color:var(--g1);transform:translateY(-3px);}
+.bnav a svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.7;fill:none;}
+.bnav a span{font-size:.48rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;}
+
+/* states */
+.loading-state{
+  display:flex;flex-direction:column;align-items:center;gap:12px;
+  padding:44px 20px;animation:up .35s var(--spring) both;
+}
+.loader{
+  width:32px;height:32px;border-radius:50%;
+  border:2px solid rgba(200,168,75,.08);border-top-color:var(--g1);
+  animation:rot .8s linear infinite;
+}
+.loader-txt{font-family:'Cinzel',serif;font-size:.7rem;color:var(--ink2);}
+.empty-state{
+  text-align:center;padding:40px 20px;
+  font-family:'Cinzel',serif;font-size:.78rem;color:var(--ink2);line-height:2.2;
+}
+.empty-state svg{width:28px;height:28px;stroke:var(--ink3);stroke-width:1.4;fill:none;margin-bottom:12px;}
 
 /* toast */
-.toast{position:fixed;bottom:86px;left:50%;transform:translateX(-50%) translateY(12px);
-  background:rgba(10,10,16,.97);border:1px solid var(--st);border-radius:24px;
-  padding:7px 15px;font-family:'Cairo',sans-serif;font-size:.7rem;font-weight:700;
-  color:var(--ink);opacity:0;pointer-events:none;transition:all .25s var(--sp);
-  z-index:9999;white-space:nowrap;}
+.toast{
+  position:fixed;bottom:92px;left:50%;
+  transform:translateX(-50%) translateY(16px);
+  background:rgba(12,12,18,.97);border:1px solid var(--stroke2);
+  border-radius:24px;padding:10px 20px;
+  font-family:'Cairo',sans-serif;font-size:.74rem;font-weight:700;color:var(--ink);
+  opacity:0;pointer-events:none;transition:all .3s var(--spring);
+  z-index:999;white-space:nowrap;backdrop-filter:blur(12px);
+  box-shadow:0 8px 24px rgba(0,0,0,.5);
+}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
-.toast.ok{border-color:rgba(76,255,154,.25);color:#4cff9a;}
-.toast.err{border-color:rgba(230,0,0,.25);color:#ff8a80;}
+.toast.ok{border-color:rgba(34,197,94,.3);color:#4ade80;}
+.toast.err{border-color:rgba(230,0,0,.3);color:#f87171;}
 
-/* nav */
-.nav{position:fixed;bottom:0;left:0;right:0;z-index:200;
-  display:flex;justify-content:space-around;align-items:center;
-  padding:8px 0 14px;background:rgba(3,3,6,.97);
-  backdrop-filter:blur(20px);border-top:1px solid var(--st);}
-.nav a{text-decoration:none;color:var(--ink3);display:flex;align-items:center;
-  padding:5px 15px;border-radius:8px;transition:color .18s,transform .2s var(--sp);}
-.nav a:hover{color:var(--g1);transform:translateY(-3px);}
-.nav a svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.6;fill:none;}
-::-webkit-scrollbar{width:2px;}::-webkit-scrollbar-track{background:var(--l1);}::-webkit-scrollbar-thumb{background:var(--l4);}
+::-webkit-scrollbar{width:3px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--l5);border-radius:4px;}
 </style>
 </head>
-<body oncontextmenu="return false">
+<body oncontextmenu="return false;">
 
 <!-- BANNER -->
 <div class="banner">
-  {% if is_logged_in %}
-  <div class="bonline">
-    <div class="dot"></div>
-    <span class="num" id="BN">{{ active_count }}</span>
-    <span class="lbl">متصل</span>
-  </div>
-  {% endif %}
-  <div class="btitle">
-    <span style="--i:0">Y</span><span style="--i:1">N</span><span style="--i:2">H</span>
-    <span style="--i:3">S</span><span style="--i:4">A</span><span style="--i:5">L</span>
-    <span style="--i:6">A</span><span style="--i:7">T</span>
+  <div class="banner-inner">
+    <div class="banner-logo">
+      <svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+    </div>
+    <div class="banner-wordmark">TALASHNY</div>
+    <div class="banner-badge">VF · EG</div>
   </div>
 </div>
 
-{% if not is_logged_in %}
-<div id="LS">
-  <div class="lw">
-    <div class="lbrand">
-      <div class="lico"><svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-      <div class="lsup">TALASHNY — Premium</div>
-      <div class="lh">أهلاً في <em>TALASHNY</em></div>
-    </div>
-    {% if login_error %}
-    <div class="err">
-      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-      {{ login_error }}
-    </div>
-    {% endif %}
-    <div class="tabs">
-      <div class="tab on" id="TP" onclick="sw('pass')">
-        <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>رقم وباسورد
-      </div>
-      <div class="tab" id="TD" onclick="sw('data')">
-        <svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>بيانات الجهاز
-      </div>
-    </div>
-    <form method="POST" id="FP" class="fs show">
-      <input type="hidden" name="action" value="login">
-      <input type="hidden" name="method" value="password">
-      <div class="fc">
-        <div class="fr">
-          <div class="fi"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/></svg></div>
-          <div class="fb"><div class="fl">رقم الموبايل</div><input class="fin" type="tel" name="number" placeholder="01XXXXXXXXX" inputmode="tel" autocomplete="tel" required value="{{ form_number }}"></div>
+{% if not logged_in %}
+<!-- ══ LOGIN SCREEN ══ -->
+<div id="LOGIN_SCREEN">
+  <div class="page">
+    <div class="login-wrap">
+      <div class="login-hero">
+        <div class="login-emblem">
+          <svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         </div>
-        <div class="fr">
-          <div class="fi"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-          <div class="fb"><div class="fl">الباسورد</div><input class="fin" type="password" name="password" placeholder="••••••••" autocomplete="current-password" required></div>
-        </div>
-        <div class="bw"><button type="submit" class="lbtn"><svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg><span class="btxt">دخـول</span><div class="bspin"></div></button></div>
+        <div class="login-eyebrow">Premium Access</div>
+        <div class="login-headline">أهلاً في <em>TALASHNY</em></div>
       </div>
-    </form>
-    <form method="POST" id="FD" class="fs">
-      <input type="hidden" name="action" value="login">
-      <input type="hidden" name="method" value="data">
-      <div class="fc">
-        <div class="dinfo">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <p><strong>تسجيل دخول بداتا الجهاز</strong>لازم تكون متصل بداتا فودافون مش واي فاي — النظام بيجيب بياناتك تلقائياً من الشبكة.</p>
-        </div>
-        <div class="bw"><button type="submit" class="lbtn"><svg viewBox="0 0 24 24"><path d="M1 6s0-2 2-2 2 2 2 2v8s0 2 2 2 2-2 2-2V6s0-2 2-2 2 2 2 2v8s0 2 2 2 2-2 2-2V6s0-2 2-2 2 2 2 2"/></svg><span class="btxt">دخول بالداتا</span><div class="bspin"></div></button></div>
+
+      {% if error %}
+      <div class="err-box">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        {{ error }}
       </div>
-    </form>
-    <div class="lnote">بياناتك محمية ومش بتتحفظ على السيرفر</div>
+      {% endif %}
+
+      <form method="POST" class="s-glass login-card" id="LOGIN_FORM">
+        <div class="login-card-header">
+          <div class="lch-dot"></div>
+          <span class="lch-txt">بيانات الدخول</span>
+        </div>
+
+        <div class="lf-field">
+          <div class="lf-ic">
+            <svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/></svg>
+          </div>
+          <div class="lf-body">
+            <span class="lf-lbl">رقم الموبايل</span>
+            <input class="lf-inp" type="tel" name="number" placeholder="01XXXXXXXXX" inputmode="tel" autocomplete="tel" required value="{{ request.form.get('number', '') }}">
+          </div>
+        </div>
+
+        <div class="lf-field">
+          <div class="lf-ic">
+            <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <div class="lf-body">
+            <span class="lf-lbl">الباسورد</span>
+            <input class="lf-inp" type="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+          </div>
+        </div>
+
+        <div class="login-submit">
+          <button type="submit" class="btn-submit" id="BTN_SUB">
+            <svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            <span class="btn-label">دخـول</span>
+            <div class="btn-spin"></div>
+          </button>
+        </div>
+      </form>
+
+      <div class="login-note">بياناتك محمية ومش بتتحفظ على السيرفر</div>
+    </div>
   </div>
 </div>
+
 {% else %}
-<div id="APP" class="on">
-  <div class="ab">
+<!-- ══ APP SCREEN ══ -->
+<div id="APP" class="active">
+  <div class="app-body">
     <div class="page">
-      <!-- SEARCH -->
+
+      <!-- SEARCH SCREEN -->
       <div id="US">
-        <div class="ubar">
-          <div class="ul"><div class="udot"></div><span class="unum">{{ user_number }}</span></div>
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div class="upill"><div class="updot"></div><span class="upn" id="UON">{{ active_count }}</span><span class="upl">متصل</span></div>
-            <a href="/?logout=1" class="bout"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>خروج</a>
-          </div>
+        <div class="us-heading">
+          <div class="us-eyebrow">Premium Tools</div>
+          <div class="us-title">ابحث عن<br><em>أنسب كارت</em></div>
+          <div class="us-sub">حدد الوحدات المطلوبة واختار طريقة الشحن المناسبة</div>
         </div>
-        <div class="scard">
-          <div class="sh">فئة الكارت — وحدات</div>
-          <div class="urow">
-            <div class="uico"><svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-            <div class="uright"><span class="ulbl">الحد الأدنى</span><input class="uinp" type="number" id="UI" placeholder="الوحدات" min="1" inputmode="numeric"></div>
+
+        <div class="user-bar">
+          <div class="ub-left">
+            <div class="ub-status"><div class="ub-dot"></div></div>
+            <span class="ub-num">{{ number }}</span>
           </div>
-          <div class="qs">
-            <div class="qlbl">اختيار سريع</div>
-            <div class="chips">
+          <a href="/?logout=1" class="ub-logout">
+            <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            خروج
+          </a>
+        </div>
+
+        <div class="s-glass search-card">
+          <!-- UNITS -->
+          <div class="sc-label">فئة الكارت</div>
+          <div class="unit-field">
+            <div class="uf-ic">
+              <svg viewBox="0 0 24 24" style="stroke:var(--ink3);stroke-width:1.7;fill:none;"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            </div>
+            <div class="uf-body">
+              <span class="uf-lbl">الحد الأدنى</span>
+              <input class="uf-inp" type="number" id="UI" placeholder="وحدات" min="1" inputmode="numeric" autofocus>
+            </div>
+          </div>
+          <div class="sc-divider"></div>
+
+          <div class="chips-area">
+            <div class="chips-lbl">اختيار سريع</div>
+            <div class="chips-row">
               <button class="chip" onclick="setU(100,this)">100</button>
               <button class="chip" onclick="setU(300,this)">300</button>
               <button class="chip" onclick="setU(500,this)">500</button>
@@ -807,199 +930,357 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
               <button class="chip" onclick="setU(900,this)">900</button>
             </div>
           </div>
-          <div class="cms">
-            <div class="cml">طريقة الشحن</div>
-            <div class="cmbs">
-              <div class="cmb ol on" id="CMO" onclick="setMode('online')">
-                <div class="cmico"><svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
-                <strong>أونلاين</strong><small>شحن مباشر</small>
+
+          <!-- MODE -->
+          <div class="mode-area">
+            <div class="mode-lbl">طريقة الشحن</div>
+            <div class="mode-btns">
+              <div class="mode-btn online sel" id="CM_ONLINE" onclick="setMode('online')">
+                <div class="mb-icon"><svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+                <span class="mb-title">شحن أونلاين</span>
+                <span class="mb-sub">تلقائي مباشر</span>
               </div>
-              <div class="cmb dl" id="CMD" onclick="setMode('dial')">
-                <div class="cmico"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.24h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.09 6.09l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
-                <strong>اتصال</strong><small>لوحة الأرقام</small>
+              <div class="mode-btn dial" id="CM_DIAL" onclick="setMode('dial')">
+                <div class="mb-icon"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.24h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.09 6.09l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div>
+                <span class="mb-title">شحن عادي</span>
+                <span class="mb-sub">لوحة الاتصال</span>
               </div>
             </div>
           </div>
-          <div class="tgs open" id="TGS">
-            <div class="tgl">شحن على رقم</div>
-            <div class="tgbs">
-              <div class="tgb on" id="TGM" onclick="setTg('mine')">رقمي</div>
-              <div class="tgb" id="TGO" onclick="setTg('other')">رقم تاني</div>
+
+          <!-- TARGET -->
+          <div class="target-area open" id="OT_AREA">
+            <div class="target-lbl">شحن على رقم</div>
+            <div class="target-btns">
+              <div class="target-btn sel" id="OT_MINE" onclick="setTarget('mine')">رقمي</div>
+              <div class="target-btn" id="OT_OTHER" onclick="setTarget('other')">رقم تاني</div>
             </div>
-            <div class="otf" id="OTF">
-              <div class="ofl"><div class="ofic"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/></svg></div><input type="tel" id="OTN" placeholder="01XXXXXXXXX" inputmode="tel"></div>
-              <div class="ofl"><div class="ofic"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><input type="password" id="OTP" placeholder="باسورد الرقم التاني"></div>
+            <div class="other-fields" id="OTHER_FIELDS">
+              <div class="of-wrap">
+                <div class="of-ic"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/></svg></div>
+                <input type="tel" id="OT_NUM" placeholder="رقم التاني 01XXXXXXXXX" inputmode="tel">
+              </div>
+              <div class="of-wrap">
+                <div class="of-ic"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+                <input type="password" id="OT_PASS" placeholder="باسورد الرقم التاني">
+              </div>
             </div>
           </div>
-          <div class="gos">
-            <button class="gobtn" onclick="startApp()">
+
+          <div class="go-area">
+            <button class="btn-go" onclick="startSearch()">
               <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <span>ابدأ البحث</span>
             </button>
           </div>
         </div>
       </div>
-      <!-- CARDS -->
+
+      <!-- CARDS SCREEN -->
       <div id="CS">
-        <div class="csbar">
-          <div class="csi">بحث عن <strong id="IU">—</strong></div>
-          <button class="csbk" onclick="goBack()"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>تغيير</button>
+        <div class="s-glass cs-header">
+          <div class="cs-info">بحث عن <strong id="IU">—</strong></div>
+          <button class="cs-back" onclick="goBack()">
+            <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+            تغيير
+          </button>
         </div>
-        <div class="tc">
-          <div class="tt">
-            <div class="ttl"><div class="trd"></div><span class="ttxt">تحديث كل 7 ثواني</span></div>
-            <span class="tnum" id="TN">—</span>
+
+        <div class="s-glass timer-panel">
+          <div class="timer-top">
+            <div class="timer-left-group">
+              <div class="live-badge">
+                <div class="live-dot"></div>
+                <span class="live-txt">Live</span>
+              </div>
+            </div>
+            <div class="timer-right">
+              <div class="timer-num" id="TN">—</div>
+              <div class="users-badge">
+                <div class="users-ic"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+                <span class="users-count" id="UC">—</span>
+                <span class="users-lbl">متصل</span>
+              </div>
+            </div>
           </div>
-          <div class="tbar"><div class="tprog" id="TPROG" style="width:100%"></div></div>
+          <div class="timer-track"><div class="timer-fill" id="TP" style="width:100%"></div></div>
         </div>
-        <div class="tgl2" onclick="document.getElementById('CC').click()">
-          <div><strong>استمرار البحث بعد الشحن</strong><small id="TH">مفعّل — يكمل البحث بعد الشحن</small></div>
-          <div class="sw"><input type="checkbox" id="CC" checked onchange="onTgl()"><div class="sw-t"></div></div>
+
+        <div class="s-glass tgl-row" onclick="document.getElementById('CC').click()">
+          <div class="tgl-info">
+            <strong>استمرار البحث بعد الشحن</strong>
+            <small id="TH">مفعّل — يكمل البحث بعد الشحن</small>
+          </div>
+          <div class="sw">
+            <input type="checkbox" id="CC" checked onchange="onTgl()">
+            <div class="sw-track"></div>
+          </div>
         </div>
+
         <div id="CP"></div>
       </div>
+
     </div>
   </div>
 </div>
 {% endif %}
 
-<nav class="nav">
-  <a href="https://t.me/FY_TF" target="_blank"><svg viewBox="0 0 24 24"><path d="M21.5 2.5L2.5 10.5l7 2.5 2.5 7 3-4.5 4.5 3.5 2-16z"/></svg></a>
-  <a href="https://wa.me/message/U6AIKBGFCNCQK1" target="_blank"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></a>
-  <a href="https://www.facebook.com/VI808IV" target="_blank"><svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>
+<!-- NAV -->
+<nav class="bnav">
+  <a href="https://t.me/FY_TF" target="_blank">
+    <svg viewBox="0 0 24 24"><path d="M21.5 2.5L2.5 10.5l7 2.5 2.5 7 3-4.5 4.5 3.5 2-16z"/></svg>
+    <span>Telegram</span>
+  </a>
+  <a href="https://wa.me/message/U6AIKBGFCNCQK1" target="_blank">
+    <svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+    <span>WhatsApp</span>
+  </a>
+  <a href="https://www.facebook.com/VI808IV" target="_blank">
+    <svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+    <span>Facebook</span>
+  </a>
 </nav>
+
 <div class="toast" id="TOAST"></div>
 
 <script>
-function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function toast(m,t=''){const el=document.getElementById('TOAST');el.textContent=m;el.className='toast show'+(t?' '+t:'');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600);}
-function sw(t){
-  document.getElementById('TP').classList.toggle('on',t==='pass');
-  document.getElementById('TD').classList.toggle('on',t==='data');
-  document.getElementById('FP').classList.toggle('show',t==='pass');
-  document.getElementById('FD').classList.toggle('show',t==='data');
-}
-document.querySelectorAll('form.fs').forEach(f=>{
-  f.addEventListener('submit',function(){const b=this.querySelector('.lbtn');if(b){b.classList.add('loading');b.disabled=true;}});
+// ── Login form handler ──
+document.getElementById('LOGIN_FORM')?.addEventListener('submit', function(){
+  const btn = document.getElementById('BTN_SUB');
+  btn.classList.add('loading');
+  btn.disabled = true;
 });
 
-{% if is_logged_in %}
-const SECS=7;
-let units=0,mode='online',tg='mine',running=false,stopped=false,ti=null,ct=null,charged=false;
+{% if logged_in %}
+// ── STATE ──
+const SECS = 7;
+const SID  = Math.random().toString(36).slice(2);
+let units = 0, chargeMode = 'online', targetMode = 'mine';
+let running = false, stop = false, ti = null, ct = null, charged = false;
 
-setInterval(async()=>{try{const d=await(await fetch('/?ping=1&_='+Date.now())).json();if(d.active_users!=null)updOn(d.active_users);}catch(e){}},60000);
-function updOn(n){['BN','UON'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent=n;});}
+// ── PRESENCE PING ──
+setInterval(() => fetch('/ping?sid='+SID).then(r=>r.json()).then(d=>{
+  const uc = document.getElementById('UC');
+  if(uc) uc.textContent = d.count;
+}).catch(()=>{}), 8000);
+// Initial ping
+fetch('/ping?sid='+SID).then(r=>r.json()).then(d=>{const uc=document.getElementById('UC');if(uc)uc.textContent=d.count;});
 
-function setU(n,b){document.getElementById('UI').value=n;document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));b.classList.add('on');}
-function setMode(m){mode=m;document.getElementById('CMO').classList.toggle('on',m==='online');document.getElementById('CMD').classList.toggle('on',m==='dial');document.getElementById('TGS').classList.toggle('open',m==='online');}
-function setTg(t){tg=t;document.getElementById('TGM').classList.toggle('on',t==='mine');document.getElementById('TGO').classList.toggle('on',t==='other');document.getElementById('OTF').classList.toggle('show',t==='other');}
-function onTgl(){const on=document.getElementById('CC').checked;document.getElementById('TH').textContent=on?'مفعّل — يكمل البحث بعد الشحن':'معطّل — يتوقف بعد أول كارت';}
+function toast(msg,t=''){
+  const el=document.getElementById('TOAST');
+  el.textContent=msg;el.className='toast show'+(t?' '+t:'');
+  clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2800);
+}
 
-function startApp(){
+function onTgl(){
+  const on=document.getElementById('CC').checked;
+  document.getElementById('TH').textContent=on?'مفعّل — يكمل البحث بعد الشحن':'معطّل — يتوقف بعد أول شحن';
+}
+function setU(n,b){
+  document.getElementById('UI').value=n;
+  document.querySelectorAll('.chip').forEach(x=>x.classList.remove('sel'));
+  b.classList.add('sel');
+}
+function setMode(m){
+  chargeMode=m;
+  document.getElementById('CM_ONLINE').classList.toggle('sel',m==='online');
+  document.getElementById('CM_DIAL').classList.toggle('sel',m==='dial');
+  document.getElementById('OT_AREA').classList.toggle('open',m==='online');
+}
+function setTarget(t){
+  targetMode=t;
+  document.getElementById('OT_MINE').classList.toggle('sel',t==='mine');
+  document.getElementById('OT_OTHER').classList.toggle('sel',t==='other');
+  document.getElementById('OTHER_FIELDS').classList.toggle('show',t==='other');
+}
+
+function startSearch(){
   const v=parseInt(document.getElementById('UI').value)||0;
-  if(v<1){document.getElementById('UI').focus();return;}
-  if(mode==='online'&&tg==='other'&&(!document.getElementById('OTN').value.trim()||!document.getElementById('OTP').value.trim())){toast('ادخل رقم وباسورد الرقم التاني','err');return;}
-  units=v;stopped=false;charged=false;
+  if(v<1){
+    const inp=document.getElementById('UI');
+    inp.focus();
+    inp.closest('.unit-field').style.background='rgba(230,0,0,.05)';
+    setTimeout(()=>inp.closest('.unit-field').style.background='',900);
+    return;
+  }
+  if(chargeMode==='online'&&targetMode==='other'){
+    if(!document.getElementById('OT_NUM').value.trim()||!document.getElementById('OT_PASS').value.trim()){
+      toast('ادخل رقم وباسورد الرقم التاني','err');return;
+    }
+  }
+  units=v;stop=false;charged=false;
   document.getElementById('IU').textContent=v+' وحدة';
   document.getElementById('US').style.display='none';
   document.getElementById('CS').style.display='flex';
-  run();
+  runCycle();
 }
-function goBack(){stopped=true;clearInterval(ti);clearTimeout(ct);document.getElementById('CS').style.display='none';document.getElementById('US').style.display='flex';document.getElementById('CP').innerHTML='';running=false;stopT();}
-function startTimer(s){return new Promise(r=>{clearInterval(ti);let rem=s;updT(rem,s);ti=setInterval(()=>{rem--;updT(rem,s);if(rem<=0){clearInterval(ti);r();}},1000);ct=setTimeout(r,s*1000+300);});}
-function updT(r,t){const n=document.getElementById('TN'),p=document.getElementById('TPROG');if(!n||!p)return;n.textContent=Math.max(r,0);p.style.width=Math.max(0,r/t*100)+'%';n.classList.toggle('hot',r<=2);}
-function stopT(){clearInterval(ti);const n=document.getElementById('TN'),p=document.getElementById('TPROG');if(n)n.textContent='—';if(p)p.style.width='0%';}
 
-async function fetchC(){
-  try{const d=await(await fetch('/?fetch=1&_='+Date.now())).json();
-  if(d.active_users!=null)updOn(d.active_users);return d;}
-  catch{return{success:false,promos:[]};}
+function goBack(){
+  stop=true;clearInterval(ti);clearTimeout(ct);stopTimer();
+  document.getElementById('CS').style.display='none';
+  document.getElementById('US').style.display='flex';
+  document.getElementById('CP').innerHTML='';
+  running=false;
 }
-function findBest(ps){return ps.find(p=>parseInt(p.gift)>=units)||null;}
 
-async function doCharge(serial){
-  let url='/?redeem=1&serial='+encodeURIComponent(serial);
-  if(tg==='other'){url+='&target='+encodeURIComponent(document.getElementById('OTN').value.trim())+'&tpass='+encodeURIComponent(document.getElementById('OTP').value.trim());}
-  const btn=document.querySelector('.bcharge[data-s="'+serial+'"]');if(btn)btn.classList.add('loading');
+function startTimer(s){
+  return new Promise(res=>{
+    clearInterval(ti);let r=s;updTimer(r,s);
+    ti=setInterval(()=>{r--;updTimer(r,s);if(r<=0){clearInterval(ti);res();}},1000);
+    ct=setTimeout(res,s*1000+200);
+  });
+}
+function updTimer(r,t){
+  const n=document.getElementById('TN'),p=document.getElementById('TP');
+  if(!n||!p)return;
+  n.textContent=Math.max(r,0);
+  p.style.width=Math.max(0,r/t*100)+'%';
+  n.classList.toggle('hot',r<=2);
+}
+function stopTimer(){
+  clearInterval(ti);
+  const n=document.getElementById('TN'),p=document.getElementById('TP');
+  if(n)n.textContent='—';if(p)p.style.width='0%';
+}
+
+async function fetchCards(){
+  try{const r=await fetch('/fetch?t='+Date.now()+'&sid='+SID);const d=await r.json();
+    const uc=document.getElementById('UC');if(uc&&d.active)uc.textContent=d.active;
+    return d;}catch{return{success:false,promos:[]};}
+}
+
+function findBest(promos){return promos.find(p=>parseInt(p.gift)>=units)||null;}
+
+async function doRedeem(serial){
+  let url='/redeem?serial='+encodeURIComponent(serial);
+  if(targetMode==='other'){
+    url+='&target='+encodeURIComponent(document.getElementById('OT_NUM').value.trim());
+    url+='&tpass='+encodeURIComponent(document.getElementById('OT_PASS').value.trim());
+  }
+  const btn=document.querySelector('.btn-redeem[data-s="'+serial+'"]');
+  if(btn)btn.classList.add('loading');
   try{
-    const d=await(await fetch(url)).json();
-    if(d.success){toast('تم شحن الكارت ✅','ok');charged=true;if(!document.getElementById('CC').checked)setTimeout(goBack,1300);}
-    else toast('فشل الشحن ❌','err');
-  }catch{toast('خطأ في الاتصال','err');}
+    const r=await fetch(url);const d=await r.json();
+    if(d.success){toast('✅ تم شحن الكارت بنجاح','ok');charged=true;
+      if(!document.getElementById('CC').checked)setTimeout(()=>goBack(),1500);
+    }else{toast('❌ فشل الشحن — حاول تاني','err');}
+  }catch{toast('❌ خطأ في الاتصال','err');}
   if(btn)btn.classList.remove('loading');
 }
 
 function renderCards(data){
   const panel=document.getElementById('CP');
   if(!data?.success||!data.promos?.length){
-    if(!panel.querySelector('.cl'))panel.innerHTML='<div class="es"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>لا توجد كروت الآن<br><span style="font-size:.58rem;color:var(--ink3)">جاري البحث...</span></div>';
+    if(!panel.querySelector('.cards-list')){
+      panel.innerHTML=`<div class="empty-state s-glass"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>لا يوجد كروت مناسبة الآن<br><small style="font-family:Cairo,sans-serif;font-size:.62rem;color:var(--ink3)">جاري البحث...</small></div>`;
+    }
     return false;
   }
-  const b=findBest(data.promos);
-  let h='<div class="cl">';
+  const best=findBest(data.promos);
+  let html='<div class="cards-list">';
   data.promos.forEach((p,i)=>{
-    const iB=b&&p.serial===b.serial;
-    const tel='tel:'+encodeURIComponent('*858*'+p.serial+'#');
-    h+=`<div class="pc${iB?' best':''}" style="--i:${i}">
-      <div class="pc-stripe"></div>
-      <div class="pc-top">
-        <span class="pc-serial">${esc(p.serial)}</span>
-        <div class="pc-badges">
-          ${iB?'<span class="badge-best">✦ أفضل</span>':''}
-          <span class="badge-rank">#${i+1}</span>
+    const isBest=best&&p.serial===best.serial;
+    const ussd='*858*'+p.serial.replace(/\s/g,'')+'#';
+    const tel='tel:'+encodeURIComponent(ussd);
+    html+=`
+    <div class="promo-card${isBest?' best':''}" style="--i:${i}">
+      <div class="pc-shell">
+        ${isBest?'<div class="pc-best-badge">✦ أفضل كارت</div>':''}
+        <div class="pc-body${isBest?' pc-best-body':''}">
+          <div class="pc-stats">
+            <div class="stat-block si-amount">
+              <div class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M8 10h6a2 2 0 0 1 0 4H8"/></svg></div>
+              <span class="stat-val">${p.amount}</span>
+              <span class="stat-lbl">جنيه</span>
+            </div>
+            <div class="stat-block si-gift">
+              <div class="stat-icon"><svg viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><path d="M12 22V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg></div>
+              <span class="stat-val">${p.gift}</span>
+              <span class="stat-lbl">وحدة</span>
+            </div>
+            <div class="stat-block si-remain">
+              <div class="stat-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+              <span class="stat-val">${p.remaining}</span>
+              <span class="stat-lbl">متبقي</span>
+            </div>
+          </div>
+          <div class="serial-row">
+            <div class="serial-pill">
+              <span class="sn-code">${p.serial}</span>
+              <button class="sn-copy" data-serial="${p.serial}">
+                <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="pc-actions">
+            ${isBest&&chargeMode==='online'?`<button class="btn-redeem" data-s="${p.serial}" style="display:inline-flex" onclick="doRedeem('${p.serial}')">
+              <svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>شحن أونلاين
+            </button>`:''}
+            ${isBest&&chargeMode==='dial'?`<a href="${tel}" class="btn-dial" style="display:inline-flex">
+              <svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.24h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.09 6.09l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>اتصل للشحن
+            </a>`:''}
+          </div>
         </div>
-      </div>
-      <div class="pc-stats">
-        <div class="pstat">
-          <span class="pstat-val v-gold">${esc(p.gift)}</span>
-          <span class="pstat-lbl">وحدة</span>
-        </div>
-        <div class="pstat">
-          <span class="pstat-val v-red">${esc(p.amount)}</span>
-          <span class="pstat-lbl">جنيه</span>
-        </div>
-        <div class="pstat">
-          <span class="pstat-val v-blue">${esc(p.remaining)}</span>
-          <span class="pstat-lbl">متبقي</span>
-        </div>
-      </div>
-      <div class="pc-actions">
-        <button class="pc-copy" data-s="${esc(p.serial)}">
-          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          نسخ
-        </button>
-        ${iB&&mode==='online'?`<button class="bcharge" data-s="${esc(p.serial)}" onclick="doCharge('${esc(p.serial)}')"><svg viewBox="0 0 24 24"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>شحن تلقائي</button>`:''}
-        ${iB&&mode==='dial'?`<a href="${tel}" class="bdial"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.24h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 9.91a16 16 0 0 0 6.09 6.09l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>اتصال</a>`:''}
       </div>
     </div>`;
   });
-  h+='</div>';panel.innerHTML=h;
-  if(b&&mode==='online'&&!charged){const btn=document.querySelector('.bcharge[data-s="'+b.serial+'"]');if(btn)setTimeout(()=>doCharge(b.serial),600);}
-  if(b&&mode==='dial'){const lnk=document.querySelector('.bdial');if(lnk&&!charged)setTimeout(()=>lnk.click(),500);}
-  return !!b;
-}
-function showLoad(){const p=document.getElementById('CP');if(!p.querySelector('.cl')&&!p.querySelector('.es'))p.innerHTML='<div class="ls"><div class="spinner"></div><div class="slbl">جاري تحديث الكروت</div></div>';}
-async function run(){if(running)return;running=true;while(!stopped){showLoad();const d=await fetchC();if(stopped)break;const f=renderCards(d);if(f&&!document.getElementById('CC').checked){running=false;stopT();return;}await startTimer(SECS);if(stopped)break;}running=false;stopT();}
+  html+='</div>';
+  panel.innerHTML=html;
 
-// copy — يشتغل لكل الكروت مش بس الأفضل
+  if(best&&chargeMode==='online'&&!charged){
+    setTimeout(()=>doRedeem(best.serial),700);
+  }
+  if(best&&chargeMode==='dial'&&!charged){
+    const link=document.querySelector('.btn-dial');
+    if(link)setTimeout(()=>link.click(),600);
+  }
+  return !!best;
+}
+
+function showLoading(){
+  const p=document.getElementById('CP');
+  if(!p.querySelector('.cards-list')&&!p.querySelector('.empty-state')){
+    p.innerHTML=`<div class="loading-state s-glass"><div class="loader"></div><div class="loader-txt">جاري تحديث الكروت</div></div>`;
+  }
+}
+
+async function runCycle(){
+  if(running)return;running=true;
+  while(!stop){
+    showLoading();
+    const d=await fetchCards();
+    if(stop)break;
+    const found=renderCards(d);
+    if(found&&!document.getElementById('CC').checked){end();return;}
+    await startTimer(SECS);
+    if(stop)break;
+  }
+  end();
+}
+function end(){running=false;stopTimer();}
+
+// ── COPY SERIAL ──
 document.addEventListener('click',e=>{
-  const btn=e.target.closest('.pc-copy');if(!btn)return;const s=btn.dataset.s;
+  const btn=e.target.closest('.sn-copy');
+  if(!btn)return;
+  const serial=btn.dataset.serial;
   const flash=()=>{
-    const orig=btn.innerHTML;
-    btn.style.borderColor='rgba(200,168,75,.4)';btn.style.color='var(--g2)';
-    btn.innerHTML='<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="var(--g2)" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> تم';
-    setTimeout(()=>{btn.style.borderColor='';btn.style.color='';btn.innerHTML=orig;},1600);
-    toast('تم النسخ ✓','ok');
+    btn.style.background='rgba(200,168,75,.18)';
+    btn.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f5d070" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>`;
+    setTimeout(()=>{btn.style.background='';btn.innerHTML=`<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(200,168,75,.35)" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;},1800);
+    toast('تم نسخ الكود','ok');
   };
-  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(s).then(flash).catch(()=>{fb(s,flash);});
-  else fb(s,flash);
-  function fb(s,cb){const a=document.createElement('textarea');a.value=s;a.style.cssText='position:fixed;opacity:0;';document.body.appendChild(a);a.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(a);cb();}
+  if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(serial).then(flash).catch(()=>fallback());}
+  else{fallback();}
+  function fallback(){const ta=document.createElement('textarea');ta.value=serial;ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';document.body.appendChild(ta);ta.focus();ta.select();try{document.execCommand('copy');}catch(ex){}document.body.removeChild(ta);flash();}
 });
-document.getElementById('UI')?.addEventListener('keydown',e=>{if(e.key==='Enter')startApp();});
+
+document.getElementById('UI')?.addEventListener('keydown',e=>{if(e.key==='Enter')startSearch();});
 {% endif %}
 </script>
 </body>
-</html>"""
+</html>
+"""
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(debug=True, host='0.0.0.0', port=5000)
