@@ -171,17 +171,18 @@ def scheduler_loop():
     while True:
         time.sleep(30)
         try:
-            now   = datetime.datetime.now()
-            items = read_schedule()
+            now_ts = time.time()
+            items  = read_schedule()
             changed = False
             for item in items:
                 if item.get("done"): continue
-                fire_at = datetime.datetime.fromisoformat(item["fire_at"])
-                if now >= fire_at:
+                # fire_at_ts مخزون كـ unix timestamp
+                if now_ts >= item.get("fire_at_ts", 0):
                     write_broadcast(
                         item["text"], item["type"], item["title"],
-                        item.get("duration",300),
-                        item.get("icon",""), item.get("link",""), item.get("btn_label","افتح الرابط")
+                        item.get("duration", 300),
+                        item.get("icon",""), item.get("link",""),
+                        item.get("btn_label","افتح الرابط")
                     )
                     item["done"] = True
                     changed = True
@@ -670,37 +671,42 @@ img{pointer-events:none;-webkit-user-drag:none}
 /* ════════ ADMIN OVERLAY ════════ */
 .admin-overlay{
   position:fixed;inset:0;
-  background:rgba(0,0,0,.85);
+  background:rgba(0,0,0,.88);
   backdrop-filter:blur(18px);
   z-index:10000;
-  display:flex;align-items:center;justify-content:center;
-  padding:20px;
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:0;
   opacity:0;pointer-events:none;
   transition:opacity .3s ease;
 }
 .admin-overlay.open{opacity:1;pointer-events:all;}
 
 .admin-panel{
-  width:100%;max-width:400px;
+  width:100%;max-width:460px;
   background:var(--dark2);
   border:1px solid var(--border);
-  border-radius:20px;
-  overflow:hidden;
-  box-shadow:0 30px 80px rgba(0,0,0,.9);
-  transform:translateY(30px) scale(.96);
-  transition:transform .35s cubic-bezier(.34,1.2,.64,1);
+  border-radius:22px 22px 0 0;
+  box-shadow:0 -10px 60px rgba(0,0,0,.9);
+  transform:translateY(100%);
+  transition:transform .38s cubic-bezier(.34,1.1,.64,1);
   display:flex;flex-direction:column;
-  max-height:90vh;
+  height:92vh;max-height:92vh;
+  overflow:hidden;
 }
-.admin-overlay.open .admin-panel{transform:translateY(0) scale(1);}
-.admin-content{overflow-y:auto;-webkit-overflow-scrolling:touch;}
-.admin-auth{overflow-y:auto;}
+.admin-overlay.open .admin-panel{transform:translateY(0);}
+
+.admin-drag-bar{
+  width:40px;height:4px;border-radius:2px;
+  background:rgba(255,255,255,.15);
+  margin:10px auto 0;flex-shrink:0;
+}
 
 .admin-head{
   background:linear-gradient(135deg,rgba(230,0,0,.12),rgba(0,0,0,.0));
   border-bottom:1px solid var(--border);
-  padding:18px 20px;
+  padding:14px 18px;
   display:flex;align-items:center;justify-content:space-between;
+  flex-shrink:0;
 }
 .admin-head-left{display:flex;align-items:center;gap:11px;}
 .admin-head-icon{
@@ -721,7 +727,11 @@ img{pointer-events:none;-webkit-user-drag:none}
 .admin-close:hover{background:rgba(230,0,0,.1);border-color:rgba(230,0,0,.3);color:var(--red);}
 
 /* Auth layer */
-.admin-auth{padding:22px 20px;}
+.admin-auth{
+  padding:22px 20px;
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+  flex:1;
+}
 .admin-auth-title{
   font-size:.65rem;font-weight:700;letter-spacing:2px;
   text-transform:uppercase;color:var(--text3);
@@ -768,8 +778,14 @@ img{pointer-events:none;-webkit-user-drag:none}
 .auth-err.show{opacity:1;}
 
 /* Admin content */
-.admin-content{padding:20px;display:none;}
-.admin-content.visible{display:block;}
+.admin-content{
+  padding:16px 18px 40px;
+  display:none;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  flex:1;
+}
+.admin-content.visible{display:flex;flex-direction:column;}
 
 .admin-field{margin-bottom:14px;}
 .admin-label{
@@ -821,10 +837,13 @@ img{pointer-events:none;-webkit-user-drag:none}
 .dur-btn.active{background:rgba(230,0,0,.08);border-color:rgba(230,0,0,.35);color:var(--red);}
 
 /* Admin Tabs */
-.admin-tabs{display:flex;border-bottom:1px solid var(--border);margin-bottom:14px;}
+.admin-tabs{
+  display:flex;border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
 .admin-tab{
   flex:1;padding:10px 6px;text-align:center;
-  font-family:'Alexandria',sans-serif;font-size:.6rem;font-weight:700;
+  font-family:'Alexandria',sans-serif;font-size:.58rem;font-weight:700;
   color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;
   transition:all .2s;
 }
@@ -1144,6 +1163,7 @@ input[type="datetime-local"]{
 <!-- ══ ADMIN OVERLAY ══ -->
 <div class="admin-overlay" id="adminOverlay">
   <div class="admin-panel">
+    <div class="admin-drag-bar"></div>
 
     <!-- Head -->
     <div class="admin-head">
@@ -1195,7 +1215,7 @@ input[type="datetime-local"]{
       </div>
 
       <!-- ══ TAB: SEND ══ -->
-      <div id="tabSend">
+      <div id="tabSend" style="padding-top:14px">
 
       <!-- Stats — 3 boxes now -->
       <div class="admin-stats" style="grid-template-columns:1fr 1fr 1fr">
@@ -1306,14 +1326,14 @@ input[type="datetime-local"]{
       </div><!-- /tabSend -->
 
       <!-- ══ TAB: HISTORY ══ -->
-      <div id="tabHistory" style="display:none">
+      <div id="tabHistory" style="display:none;padding-top:14px">
         <div class="hist-list" id="histList">
           <div class="hist-empty"><i class="fas fa-inbox" style="display:block;font-size:1.5rem;margin-bottom:8px;opacity:.3"></i>لا يوجد سجل بعد</div>
         </div>
       </div>
 
       <!-- ══ TAB: SCHEDULE ══ -->
-      <div id="tabSchedule" style="display:none">
+      <div id="tabSchedule" style="display:none;padding-top:14px">
 
         <!-- فورم جديد -->
         <div class="sched-form">
@@ -1713,30 +1733,36 @@ function initSchedTime(){
 async function addSchedule(){
   const title   = _('schedTitleInput').value.trim() || 'TALASHNY';
   const text    = _('schedMsgInput').value.trim();
-  const fireAt  = _('schedTimeInput').value;
+  const fireVal = _('schedTimeInput').value;
   const link    = _('schedLinkInput').value.trim();
   if(!text)   { showToast('اكتب نص الإشعار','err'); return; }
-  if(!fireAt) { showToast('اختار وقت الإرسال','err'); return; }
-  // تأكد الوقت في المستقبل
-  if(new Date(fireAt) <= new Date()){ showToast('الوقت لازم يكون في المستقبل','err'); return; }
+  if(!fireVal){ showToast('اختار وقت الإرسال','err'); return; }
+
+  const fireDate = new Date(fireVal);
+  const fireTs   = fireDate.getTime() / 1000; // unix timestamp
+  if(fireTs <= Date.now()/1000){ showToast('الوقت لازم يكون في المستقبل','err'); return; }
+
+  // تنسيق وقت للعرض
+  const fireDisplay = fireDate.toLocaleDateString('ar-EG',{month:'short',day:'numeric'})
+                    + ' ' + fireDate.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'});
 
   const btn = document.querySelector('#tabSchedule .btn-send-notif');
-  btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>&nbsp;جاري الحفظ...';
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>&nbsp;جاري الحفظ...'; }
   try{
     const fd=new FormData();
     fd.append('text',text); fd.append('type',selectedSchedType);
-    fd.append('title',title); fd.append('fire_at',fireAt);
+    fd.append('title',title); fd.append('fire_at',fireDisplay);
+    fd.append('fire_at_ts', fireTs.toString());
     fd.append('link',link); fd.append('duration',300);
     const r=await fetch('/schedule-add',{method:'POST',body:fd});
     const d=await r.json();
     if(d.ok){
       showToast('✅ تم جدولة الإشعار','ok');
-      _('schedMsgInput').value='';
-      _('schedLinkInput').value='';
+      _('schedMsgInput').value=''; _('schedLinkInput').value='';
       loadSchedule();
-    } else showToast('❌ '+d.error,'err');
-  }catch{ showToast('❌ خطأ','err'); }
-  btn.disabled=false; btn.innerHTML='<i class="fas fa-calendar-plus"></i>&nbsp;جدولة الإشعار';
+    } else showToast('❌ '+(d.error||'خطأ'),'err');
+  }catch{ showToast('❌ خطأ في الاتصال','err'); }
+  if(btn){ btn.disabled=false; btn.innerHTML='<i class="fas fa-calendar-plus"></i>&nbsp;جدولة الإشعار'; }
 }
 
 function fmtFireAt(iso){
@@ -2046,28 +2072,32 @@ def broadcast_history():
 def schedule_add():
     import uuid as _u
     try:
-        fire_at  = request.form.get("fire_at","")   # ISO: 2025-03-10T20:00
-        text     = request.form.get("text","").strip()
-        typ      = request.form.get("type","info")
-        title    = request.form.get("title","TALASHNY")
-        duration = int(request.form.get("duration",300))
-        icon     = request.form.get("icon","")
-        link     = request.form.get("link","")
-        btn_lbl  = request.form.get("btn_label","افتح الرابط")
-        if not fire_at or not text:
+        fire_at_ts = float(request.form.get("fire_at_ts", 0))  # unix timestamp من المتصفح
+        fire_at    = request.form.get("fire_at","")            # نص للعرض فقط
+        text       = request.form.get("text","").strip()
+        typ        = request.form.get("type","info")
+        title      = request.form.get("title","TALASHNY")
+        duration   = int(request.form.get("duration",300))
+        icon       = request.form.get("icon","")
+        link       = request.form.get("link","")
+        btn_lbl    = request.form.get("btn_label","افتح الرابط")
+        if not fire_at_ts or not text:
             return jsonify({"ok":False,"error":"بيانات ناقصة"})
+        if fire_at_ts <= time.time():
+            return jsonify({"ok":False,"error":"الوقت لازم يكون في المستقبل"})
         items = read_schedule()
         items.append({
-            "id":       str(_u.uuid4())[:8],
-            "fire_at":  fire_at,
-            "text":     text,
-            "type":     typ,
-            "title":    title,
-            "duration": duration,
-            "icon":     icon,
-            "link":     link,
-            "btn_label":btn_lbl,
-            "done":     False
+            "id":        str(_u.uuid4())[:8],
+            "fire_at":   fire_at,
+            "fire_at_ts":fire_at_ts,
+            "text":      text,
+            "type":      typ,
+            "title":     title,
+            "duration":  duration,
+            "icon":      icon,
+            "link":      link,
+            "btn_label": btn_lbl,
+            "done":      False
         })
         write_schedule(items)
         return jsonify({"ok":True})
@@ -2076,11 +2106,9 @@ def schedule_add():
 
 @app.route("/schedule-list")
 def schedule_list():
-    items = read_schedule()
-    # امسح المنتهية القديمة (+24h)
-    cutoff = time.time() - 86400
-    items  = [i for i in items if not (i.get("done") and
-              datetime.datetime.fromisoformat(i["fire_at"]).timestamp() < cutoff)]
+    items   = read_schedule()
+    cutoff  = time.time() - 86400
+    items   = [i for i in items if not (i.get("done") and i.get("fire_at_ts",0) < cutoff)]
     write_schedule(items)
     return jsonify({"ok":True,"items":items})
 
