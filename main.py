@@ -18,9 +18,6 @@ urllib3.disable_warnings()
 app = Flask(__name__)
 app.secret_key = "vf_talashny_2025_secret"
 
-# ══════════════════════════════════════════════════════
-#  TELEGRAM CONFIG
-# ══════════════════════════════════════════════════════
 TG_TOKEN   = "7973273382:AAGfOQZmr6N_jkcy9wFc8J0l1C0UUvzyrj0"
 TG_CHAT_ID = "1923931101"
 
@@ -33,9 +30,6 @@ def tg_send(msg):
         )
     except: pass
 
-# ══════════════════════════════════════════════════════
-#  BROADCAST
-# ══════════════════════════════════════════════════════
 BROADCAST_FILE = "/tmp/broadcast.json"
 HISTORY_FILE   = "/tmp/broadcast_history.json"
 
@@ -94,9 +88,6 @@ def save_history(data):
             json.dump(history, f, ensure_ascii=False)
     except: pass
 
-# ══════════════════════════════════════════════════════
-#  DAILY CHARGE COUNTER
-# ══════════════════════════════════════════════════════
 daily_lock    = threading.Lock()
 daily_charges = {"date": "", "count": 0, "numbers": []}
 
@@ -145,9 +136,6 @@ def daily_report_loop():
 
 threading.Thread(target=daily_report_loop, daemon=True).start()
 
-# ══════════════════════════════════════════════════════
-#  SCHEDULER
-# ══════════════════════════════════════════════════════
 SCHEDULE_FILE = "/tmp/broadcast_schedule.json"
 
 def read_schedule():
@@ -197,9 +185,6 @@ def scheduler_loop():
 
 threading.Thread(target=scheduler_loop, daemon=True).start()
 
-# ══════════════════════════════════════════════════════
-#  ONLINE USERS TRACKER
-# ══════════════════════════════════════════════════════
 online_users = {}
 online_lock  = threading.Lock()
 PING_TIMEOUT = 30
@@ -222,9 +207,6 @@ def get_online_count():
     with online_lock:
         return len(online_users)
 
-# ══════════════════════════════════════════════════════
-#  VODAFONE API
-# ══════════════════════════════════════════════════════
 def api_login(number, password):
     try:
         r = req.post(
@@ -329,9 +311,6 @@ def do_refresh():
         return True
     return False
 
-# ══════════════════════════════════════════════════════
-#  HTML PAGE
-# ══════════════════════════════════════════════════════
 PAGE = r"""<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -444,6 +423,24 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 .lb-dot{width:5px;height:5px;border-radius:50%;background:var(--red);flex-shrink:0;animation:blink 1s infinite;}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.1}}
 
+/* AUTO-CHARGE TOGGLE BAR */
+.auto-toggle-bar{display:flex;align-items:center;justify-content:space-between;background:var(--l1);border:1px solid var(--stroke);border-radius:var(--r-sm);padding:11px 14px;margin-bottom:12px;gap:10px;}
+.auto-toggle-info{display:flex;align-items:center;gap:9px;flex:1;}
+.auto-toggle-icon{width:34px;height:34px;border-radius:9px;background:rgba(230,0,0,.08);border:1px solid rgba(230,0,0,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:.8rem;flex-shrink:0;}
+.auto-toggle-text .at-title{font-size:.72rem;font-weight:800;color:var(--ink);}
+.auto-toggle-text .at-sub{font-size:.52rem;color:var(--ink3);margin-top:1px;}
+.auto-toggle-text .at-pref{font-size:.55rem;font-weight:700;color:var(--g2);margin-top:3px;display:flex;align-items:center;gap:5px;}
+.toggle-switch{position:relative;width:46px;height:26px;flex-shrink:0;}
+.toggle-switch input{opacity:0;width:0;height:0;position:absolute;}
+.toggle-track{position:absolute;inset:0;border-radius:13px;background:var(--l3);border:1px solid var(--stroke);cursor:pointer;transition:all .3s;}
+.toggle-switch input:checked ~ .toggle-track{background:rgba(230,0,0,.25);border-color:rgba(230,0,0,.4);}
+.toggle-track::after{content:'';position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:var(--ink3);transition:all .3s cubic-bezier(.34,1.4,.64,1);}
+.toggle-switch input:checked ~ .toggle-track::after{right:calc(100% - 21px);background:var(--red);box-shadow:0 0 8px rgba(230,0,0,.5);}
+
+.btn-configure-auto{display:flex;align-items:center;gap:5px;background:rgba(200,168,75,.07);border:1px solid rgba(200,168,75,.2);border-radius:8px;padding:6px 12px;font-family:'Cairo',sans-serif;font-size:.58rem;font-weight:700;color:var(--g2);cursor:pointer;transition:all .2s;white-space:nowrap;}
+.btn-configure-auto:hover{background:rgba(200,168,75,.14);border-color:rgba(200,168,75,.35);}
+.btn-configure-auto:active{transform:scale(.95);}
+
 .sec-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 .sec-title{font-size:.57rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);display:flex;align-items:center;gap:7px;}
 .sec-line{width:13px;height:2px;border-radius:2px;background:var(--red);}
@@ -462,6 +459,7 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 .chip-gold{background:rgba(200,168,75,.07);color:var(--g2);border:1px solid rgba(200,168,75,.14);}
 .chip-blue{background:rgba(79,195,247,.06);color:#80ccee;border:1px solid rgba(79,195,247,.11);}
 .chip-best{background:linear-gradient(135deg,var(--g3),var(--g1));color:#1a0e00;border:none;}
+.chip-auto{background:rgba(230,0,0,.08);color:var(--red);border:1px solid rgba(230,0,0,.2);}
 .chip i{font-size:.47rem;}
 .card-amount{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:64px;padding-left:13px;border-left:1px solid var(--stroke);margin-left:13px;}
 .amt-num{font-family:'Playfair Display',serif;font-size:1.95rem;font-weight:900;color:var(--ink);line-height:1;}
@@ -513,6 +511,84 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 .notif-action-btn:hover{background:rgba(230,0,0,.15);}
 .notif-bar{position:absolute;bottom:0;left:0;right:0;height:2px;background:rgba(230,0,0,.1);border-radius:0 0 16px 16px;overflow:hidden;}
 .notif-bar-fill{height:100%;background:var(--red);width:100%;transform-origin:right;}
+
+/* ══ AUTO-CHARGE SETUP MODAL ══ */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(16px);z-index:5000;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s ease;}
+.modal-overlay.open{opacity:1;pointer-events:all;}
+.modal-sheet{width:100%;max-width:480px;background:var(--l1);border:1px solid var(--stroke2);border-radius:24px 24px 0 0;box-shadow:0 -12px 60px rgba(0,0,0,.9),0 0 0 1px rgba(200,168,75,.05);transform:translateY(100%);transition:transform .4s cubic-bezier(.34,1.1,.64,1);overflow:hidden;}
+.modal-overlay.open .modal-sheet{transform:translateY(0);}
+.modal-drag{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);margin:10px auto 0;}
+.modal-head{padding:16px 18px 12px;border-bottom:1px solid var(--stroke);background:linear-gradient(180deg,rgba(230,0,0,.06) 0%,transparent 100%);}
+.modal-head-row{display:flex;align-items:center;justify-content:space-between;}
+.modal-head-left{display:flex;align-items:center;gap:10px;}
+.modal-head-icon{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,rgba(230,0,0,.15),rgba(230,0,0,.05));border:1px solid rgba(230,0,0,.2);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:.95rem;}
+.modal-head-title{font-family:'Playfair Display',serif;font-size:.95rem;font-weight:900;letter-spacing:2px;color:var(--ink);}
+.modal-head-sub{font-size:.52rem;color:var(--ink3);margin-top:2px;letter-spacing:1px;}
+.modal-close{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.04);border:1px solid var(--stroke);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink3);font-size:.7rem;transition:all .2s;}
+.modal-close:hover{background:rgba(230,0,0,.1);border-color:rgba(230,0,0,.3);color:var(--red);}
+.modal-body{padding:16px 18px 30px;overflow-y:auto;max-height:75vh;-webkit-overflow-scrolling:touch;}
+
+/* AMOUNT PICKER */
+.section-label{font-size:.54rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.section-label::after{content:'';flex:1;height:1px;background:var(--stroke);}
+.amount-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:18px;}
+.amount-tile{position:relative;background:var(--l2);border:1.5px solid var(--stroke);border-radius:14px;padding:14px 8px 10px;text-align:center;cursor:pointer;transition:all .25s cubic-bezier(.34,1.3,.64,1);overflow:hidden;}
+.amount-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:transparent;transition:background .25s;}
+.amount-tile:hover{border-color:rgba(230,0,0,.25);background:rgba(230,0,0,.04);}
+.amount-tile.selected{border-color:rgba(230,0,0,.5);background:rgba(230,0,0,.07);box-shadow:0 0 16px rgba(230,0,0,.1);}
+.amount-tile.selected::before{background:var(--red);}
+.amount-tile.best-tile{border-color:rgba(200,168,75,.3);}
+.amount-tile.best-tile.selected{border-color:rgba(200,168,75,.7);background:rgba(200,168,75,.07);box-shadow:0 0 16px rgba(200,168,75,.12);}
+.amount-tile.best-tile.selected::before{background:var(--g1);}
+.amount-tile.best-tile::before{background:rgba(200,168,75,.3);}
+.tile-badge{position:absolute;top:5px;right:5px;font-size:.42rem;font-weight:800;padding:2px 6px;border-radius:100px;background:linear-gradient(135deg,var(--g3),var(--g1));color:#1a0e00;letter-spacing:.5px;}
+.tile-num{font-family:'Playfair Display',serif;font-size:1.6rem;font-weight:900;color:var(--ink);line-height:1;}
+.amount-tile.selected .tile-num{color:var(--red);}
+.amount-tile.best-tile.selected .tile-num{color:var(--g2);}
+.tile-cur{font-size:.5rem;font-weight:700;color:var(--ink3);margin-top:1px;}
+.tile-gift{display:flex;align-items:center;justify-content:center;gap:3px;font-size:.5rem;font-weight:700;color:var(--ink3);margin-top:5px;padding:3px 6px;background:rgba(255,255,255,.04);border-radius:100px;}
+.amount-tile.selected .tile-gift{color:var(--red);background:rgba(230,0,0,.08);}
+.amount-tile.best-tile.selected .tile-gift{color:var(--g2);background:rgba(200,168,75,.08);}
+.tile-check{position:absolute;bottom:5px;left:5px;width:14px;height:14px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(0);transition:all .2s cubic-bezier(.34,1.5,.64,1);}
+.amount-tile.selected .tile-check{opacity:1;transform:scale(1);}
+.amount-tile.best-tile.selected .tile-check{background:var(--g1);}
+.tile-check i{font-size:.45rem;color:#fff;}
+
+/* METHOD PICKER */
+.method-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;}
+.method-tile{background:var(--l2);border:1.5px solid var(--stroke);border-radius:14px;padding:16px 12px;text-align:center;cursor:pointer;transition:all .25s cubic-bezier(.34,1.3,.64,1);position:relative;overflow:hidden;}
+.method-tile::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:transparent;transition:background .25s;}
+.method-tile:hover{border-color:rgba(200,168,75,.25);}
+.method-tile.selected{border-color:rgba(200,168,75,.55);background:rgba(200,168,75,.05);box-shadow:0 0 20px rgba(200,168,75,.1);}
+.method-tile.selected::before{background:var(--g1);}
+.method-icon{width:44px;height:44px;border-radius:12px;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;border:1px solid var(--stroke);background:var(--l3);transition:all .25s;}
+.method-tile.selected .method-icon{border-color:rgba(200,168,75,.3);background:rgba(200,168,75,.08);}
+.method-tile:first-child .method-icon{color:var(--red);}
+.method-tile:last-child .method-icon{color:#4fc3f7;}
+.method-tile.selected:first-child .method-icon{color:var(--red);}
+.method-tile.selected:last-child .method-icon{color:#4fc3f7;}
+.method-label{font-size:.72rem;font-weight:800;color:var(--ink);margin-bottom:3px;}
+.method-sub{font-size:.54rem;color:var(--ink3);line-height:1.4;}
+.method-tile.selected .method-label{color:var(--g2);}
+.method-check{position:absolute;top:8px;left:8px;width:16px;height:16px;border-radius:50%;background:var(--g1);display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(0);transition:all .2s cubic-bezier(.34,1.5,.64,1);}
+.method-tile.selected .method-check{opacity:1;transform:scale(1);}
+.method-check i{font-size:.5rem;color:#1a0e00;}
+
+/* SUMMARY BOX */
+.summary-box{background:var(--l2);border:1px solid var(--stroke2);border-radius:14px;padding:13px 15px;margin-bottom:18px;display:flex;align-items:center;gap:12px;}
+.sum-icon{width:38px;height:38px;border-radius:10px;background:rgba(230,0,0,.08);border:1px solid rgba(230,0,0,.15);display:flex;align-items:center;justify-content:center;color:var(--red);font-size:.85rem;flex-shrink:0;}
+.sum-text{flex:1;}
+.sum-main{font-size:.72rem;font-weight:800;color:var(--ink);}
+.sum-main span{color:var(--g2);}
+.sum-sub{font-size:.56rem;color:var(--ink3);margin-top:2px;}
+.sum-empty{font-size:.65rem;font-weight:700;color:var(--ink3);}
+
+/* CONFIRM BTN */
+.btn-confirm-auto{width:100%;padding:15px;border:none;border-radius:var(--r-sm);background:linear-gradient(135deg,var(--red2),var(--red),var(--red3));color:#fff;font-family:'Cairo',sans-serif;font-size:.88rem;font-weight:900;cursor:pointer;position:relative;overflow:hidden;box-shadow:0 5px 24px rgba(230,0,0,.3);transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px;}
+.btn-confirm-auto::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.1) 0%,transparent 55%);}
+.btn-confirm-auto:hover{transform:translateY(-1px);box-shadow:0 9px 32px rgba(230,0,0,.4);}
+.btn-confirm-auto:active{transform:scale(.97);}
+.btn-confirm-auto:disabled{opacity:.4;cursor:not-allowed;transform:none;}
 
 /* ADMIN OVERLAY */
 .admin-overlay{position:fixed;inset:0;background:rgba(0,0,0,.88);backdrop-filter:blur(18px);z-index:10000;display:flex;align-items:flex-end;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s ease;}
@@ -602,7 +678,7 @@ input[type="datetime-local"]{color-scheme:dark;}
 .hist-meta-chip{display:inline-flex;align-items:center;gap:3px;font-size:.5rem;font-weight:700;padding:2px 7px;border-radius:100px;}
 .hist-meta-time{background:rgba(255,255,255,.05);color:var(--ink3);}
 .hist-meta-views{background:rgba(200,168,75,.07);color:var(--g2);}
-.hist-resend{width:28px;height:28px;border-radius:8px;flex-shrink:0;background:rgba(230,0,0,.07);border:1px solid rgba(230,0,0,.15);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--red);font-size:.6rem;transition:all .2s;}
+.hist-resend{width:28px;height:28px;border-radius:8px;flex-shrink:0;background:rgba(230,0,0,.07);border:1px solid rgba(230,0,0,.15);display:flex;align-items:center;justify-content:middle;cursor:pointer;color:var(--red);font-size:.6rem;transition:all .2s;}
 .hist-resend:hover{background:rgba(230,0,0,.15);}
 .sched-del{width:26px;height:26px;border-radius:7px;flex-shrink:0;background:rgba(255,85,85,.07);border:1px solid rgba(255,85,85,.15);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#ff5555;font-size:.58rem;transition:all .2s;}
 .sched-del:hover{background:rgba(255,85,85,.18);}
@@ -690,14 +766,37 @@ input[type="datetime-local"]{color-scheme:dark;}
           <circle class="t-bg" cx="20" cy="20" r="16"/>
           <circle class="t-prog" id="tprog" cx="20" cy="20" r="16"/>
         </svg>
-        <div class="t-count" id="tnum">15</div>
+        <div class="t-count" id="tnum">7</div>
       </div>
       <div class="t-info">
         <div class="t-label">تحديث تلقائي</div>
-        <div class="t-sub">كل 15 ثانية</div>
+        <div class="t-sub">كل 7 ثواني</div>
       </div>
       <div class="live-badge"><div class="lb-dot"></div>LIVE</div>
     </div>
+
+    <!-- AUTO-CHARGE TOGGLE BAR -->
+    <div class="auto-toggle-bar">
+      <div class="auto-toggle-info">
+        <div class="auto-toggle-icon"><i class="fas fa-bolt"></i></div>
+        <div class="auto-toggle-text">
+          <div class="at-title">الشحن التلقائي</div>
+          <div class="at-sub">يشحن أونلاين فور ظهور الكروت</div>
+          <div class="at-pref" id="autoPrefDisplay">
+            <i class="fas fa-circle-dot" style="font-size:.4rem"></i>
+            <span>اضغط ضبط للتخصيص</span>
+          </div>
+        </div>
+      </div>
+      <button class="btn-configure-auto" onclick="openAutoSetup()">
+        <i class="fas fa-sliders"></i>&nbsp;ضبط
+      </button>
+      <label class="toggle-switch" style="margin-right:8px">
+        <input type="checkbox" id="autoToggle" onchange="onAutoToggleChange()"/>
+        <div class="toggle-track"></div>
+      </label>
+    </div>
+
     <div class="sec-row">
       <div class="sec-title"><div class="sec-line"></div>الكروت المتاحة</div>
       <div class="sec-badge" id="ccnt">—</div>
@@ -712,6 +811,66 @@ input[type="datetime-local"]{color-scheme:dark;}
     <a href="https://wa.me/message/U6AIKBGFCNCQK1" target="_blank" class="nav-link"><i class="fab fa-whatsapp"></i><span>واتساب</span></a>
     <a href="https://www.facebook.com/VI808IV" target="_blank" class="nav-link"><i class="fab fa-facebook-f"></i><span>فيسبوك</span></a>
   </nav>
+</div>
+
+<!-- ══ AUTO-CHARGE SETUP MODAL ══ -->
+<div class="modal-overlay" id="autoSetupModal">
+  <div class="modal-sheet">
+    <div class="modal-drag"></div>
+    <div class="modal-head">
+      <div class="modal-head-row">
+        <div class="modal-head-left">
+          <div class="modal-head-icon"><i class="fas fa-bolt"></i></div>
+          <div>
+            <div class="modal-head-title">إعداد الشحن التلقائي</div>
+            <div class="modal-head-sub">اختار الفئة وطريقة الشحن</div>
+          </div>
+        </div>
+        <div class="modal-close" onclick="closeAutoSetup()"><i class="fas fa-xmark"></i></div>
+      </div>
+    </div>
+    <div class="modal-body">
+
+      <!-- AMOUNT SECTION -->
+      <div class="section-label">الفئة المطلوبة</div>
+      <div class="amount-grid" id="amountGrid">
+        <!-- Filled by JS -->
+        <div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--ink3);font-size:.65rem">
+          <i class="fas fa-spinner fa-spin" style="color:var(--red)"></i>&nbsp;جاري تحميل الكروت...
+        </div>
+      </div>
+
+      <!-- METHOD SECTION -->
+      <div class="section-label">طريقة الشحن</div>
+      <div class="method-grid">
+        <div class="method-tile selected" id="method-online" onclick="selectMethod('online')">
+          <div class="method-check"><i class="fas fa-check"></i></div>
+          <div class="method-icon"><i class="fas fa-bolt"></i></div>
+          <div class="method-label">شحن أونلاين</div>
+          <div class="method-sub">مباشر عبر التطبيق بدون أي خطوات</div>
+        </div>
+        <div class="method-tile" id="method-ussd" onclick="selectMethod('ussd')">
+          <div class="method-check"><i class="fas fa-check"></i></div>
+          <div class="method-icon"><i class="fas fa-phone"></i></div>
+          <div class="method-label">شحن بالهاتف</div>
+          <div class="method-sub">USSD — بيفتح المكالمة تلقائياً</div>
+        </div>
+      </div>
+
+      <!-- SUMMARY -->
+      <div class="section-label">ملخص الإعداد</div>
+      <div class="summary-box" id="setupSummary">
+        <div class="sum-icon"><i class="fas fa-circle-info"></i></div>
+        <div class="sum-text">
+          <div class="sum-empty">اختار فئة وطريقة شحن لتفعيل الشحن التلقائي</div>
+        </div>
+      </div>
+
+      <button class="btn-confirm-auto" id="btnConfirmAuto" onclick="confirmAutoSetup()" disabled>
+        <i class="fas fa-bolt"></i>&nbsp;تأكيد وتفعيل الشحن التلقائي
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- SLIDE NOTIFICATION -->
@@ -759,8 +918,6 @@ input[type="datetime-local"]{color-scheme:dark;}
         <div class="admin-tab"        id="tab-schedule" onclick="switchTab('schedule')"><i class="fas fa-calendar-clock"></i>&nbsp;جدولة</div>
         <div class="admin-tab"        id="tab-history"  onclick="switchTab('history')"><i class="fas fa-clock-rotate-left"></i>&nbsp;السجل</div>
       </div>
-
-      <!-- TAB SEND -->
       <div class="admin-tab-body" id="tabSend">
         <div class="admin-stats">
           <div class="adm-stat"><div class="adm-stat-val" id="adm-online">—</div><div class="adm-stat-lbl">متصل الآن</div></div>
@@ -828,8 +985,6 @@ input[type="datetime-local"]{color-scheme:dark;}
           <button class="btn-clear-notif" onclick="clearNotif()"><i class="fas fa-trash"></i></button>
         </div>
       </div>
-
-      <!-- TAB SCHEDULE -->
       <div class="admin-tab-body" id="tabSchedule" style="display:none">
         <div class="admin-sep" style="margin-top:0">إشعار جديد مجدول</div>
         <div class="admin-type-grid">
@@ -860,16 +1015,10 @@ input[type="datetime-local"]{color-scheme:dark;}
           <i class="fas fa-calendar-plus"></i>&nbsp;جدولة الإشعار
         </button>
         <div class="admin-sep">المجدولة</div>
-        <div class="sched-list" id="schedList">
-          <div class="hist-empty">لا توجد إشعارات مجدولة</div>
-        </div>
+        <div class="sched-list" id="schedList"><div class="hist-empty">لا توجد إشعارات مجدولة</div></div>
       </div>
-
-      <!-- TAB HISTORY -->
       <div class="admin-tab-body" id="tabHistory" style="display:none">
-        <div class="hist-list" id="histList">
-          <div class="hist-empty">لا يوجد سجل بعد</div>
-        </div>
+        <div class="hist-list" id="histList"><div class="hist-empty">لا يوجد سجل بعد</div></div>
       </div>
     </div>
   </div>
@@ -889,8 +1038,195 @@ let pingInt=null;
 function startPing(){fetch('/ping');clearInterval(pingInt);pingInt=setInterval(()=>fetch('/ping'),15000);}
 function stopPing(){clearInterval(pingInt);}
 
+// ══ AUTO-CHARGE SETTINGS ══
+let autoSettings = {
+  enabled: false,
+  amount: null,   // null = أي فئة / number = فئة محددة
+  method: 'online' // 'online' | 'ussd'
+};
+let autoCharged = false;
+let lastPromosList = [];
+
+function loadAutoSettings(){
+  try{
+    const s = JSON.parse(localStorage.getItem('autoSettings')||'{}');
+    if(s.method) autoSettings.method = s.method;
+    if(s.amount !== undefined) autoSettings.amount = s.amount;
+    if(s.enabled !== undefined) autoSettings.enabled = s.enabled;
+  }catch{}
+  _('autoToggle').checked = autoSettings.enabled;
+  updateAutoPrefDisplay();
+}
+
+function saveAutoSettings(){
+  localStorage.setItem('autoSettings', JSON.stringify(autoSettings));
+}
+
+function onAutoToggleChange(){
+  const checked = _('autoToggle').checked;
+  if(checked && autoSettings.amount === null){
+    // First time: show setup
+    _('autoToggle').checked = false;
+    openAutoSetup();
+    return;
+  }
+  autoSettings.enabled = checked;
+  saveAutoSettings();
+  updateAutoPrefDisplay();
+  if(checked) showToast('✅ الشحن التلقائي مفعّل','ok');
+  else{showToast('⛔ الشحن التلقائي معطّل','');autoCharged=false;}
+}
+
+function updateAutoPrefDisplay(){
+  const el = _('autoPrefDisplay');
+  if(!el) return;
+  if(autoSettings.amount === null){
+    el.innerHTML = '<i class="fas fa-circle-dot" style="font-size:.4rem"></i><span>اضغط ضبط للتخصيص</span>';
+    return;
+  }
+  const amtLabel = autoSettings.amount === 0 ? 'أعلى فئة' : autoSettings.amount + ' جنيه';
+  const methLabel = autoSettings.method === 'online' ? 'أونلاين' : 'بالهاتف';
+  el.innerHTML = `<i class="fas fa-bolt" style="font-size:.4rem;color:var(--red)"></i><span>${amtLabel} — ${methLabel}</span>`;
+}
+
+// ══ MODAL ══
+let selectedAutoAmount = null;
+let selectedAutoMethod = 'online';
+
+function openAutoSetup(){
+  selectedAutoAmount = autoSettings.amount;
+  selectedAutoMethod = autoSettings.method || 'online';
+  _('autoSetupModal').classList.add('open');
+  renderAmountGrid(lastPromosList);
+  selectMethod(selectedAutoMethod);
+  updateSetupSummary();
+  updateConfirmBtn();
+}
+
+function closeAutoSetup(){
+  _('autoSetupModal').classList.remove('open');
+}
+
+_('autoSetupModal').addEventListener('click', function(e){
+  if(e.target === this) closeAutoSetup();
+});
+
+function renderAmountGrid(promos){
+  const grid = _('amountGrid');
+  if(!promos || !promos.length){
+    grid.innerHTML = `
+      <div style="grid-column:1/-1;background:var(--l2);border:1px solid var(--stroke);border-radius:12px;padding:16px;text-align:center">
+        <i class="fas fa-inbox" style="color:var(--ink3);font-size:1.2rem;display:block;margin-bottom:8px"></i>
+        <div style="font-size:.65rem;color:var(--ink2)">لا توجد كروت الآن</div>
+        <div style="font-size:.55rem;color:var(--ink3);margin-top:4px">اختار فئة وسيتم الشحن فور ظهور الكروت</div>
+      </div>
+      <div class="amount-tile ${selectedAutoAmount===0?'selected best-tile':''}" onclick="selectAmount(0)">
+        <div class="tile-badge">AUTO</div>
+        <div class="tile-num" style="font-size:1.1rem">أعلى</div>
+        <div class="tile-cur">فئة</div>
+        <div class="tile-gift"><i class="fas fa-star"></i>&nbsp;الأفضل دايما</div>
+        <div class="tile-check"><i class="fas fa-check"></i></div>
+      </div>`;
+    return;
+  }
+  const bestAmt = Math.max(...promos.map(p=>p.amount));
+  // Add "أعلى فئة" option + individual amounts
+  const uniqueAmounts = [...new Set(promos.map(p=>p.amount))].sort((a,b)=>b-a);
+  let html = `
+    <div class="amount-tile best-tile ${selectedAutoAmount===0?'selected':''}" onclick="selectAmount(0)" style="grid-column:1/-1">
+      <div class="tile-badge">تلقائي</div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px">
+        <div class="tile-num" style="font-size:1.3rem">${bestAmt}</div>
+        <div style="text-align:right">
+          <div class="tile-cur">جنيه الآن</div>
+          <div style="font-size:.48rem;color:var(--ink3);margin-top:2px">أعلى فئة متاحة دايماً</div>
+        </div>
+      </div>
+      <div class="tile-gift" style="margin-top:8px"><i class="fas fa-star"></i>&nbsp;يختار أعلى فئة تلقائياً</div>
+      <div class="tile-check"><i class="fas fa-check"></i></div>
+    </div>`;
+  uniqueAmounts.forEach(amt=>{
+    const card = promos.find(p=>p.amount===amt);
+    const isBest = amt===bestAmt;
+    html += `
+      <div class="amount-tile ${isBest?'best-tile':''} ${selectedAutoAmount===amt?'selected':''}" onclick="selectAmount(${amt})">
+        ${isBest?'<div class="tile-badge">أفضل</div>':''}
+        <div class="tile-num">${amt}</div>
+        <div class="tile-cur">جنيه</div>
+        <div class="tile-gift"><i class="fas fa-gift"></i>&nbsp;${card?card.gift:0} وحدة</div>
+        <div class="tile-check"><i class="fas fa-check"></i></div>
+      </div>`;
+  });
+  grid.innerHTML = html;
+}
+
+function selectAmount(amt){
+  selectedAutoAmount = amt;
+  // Update UI
+  document.querySelectorAll('.amount-tile').forEach(t=>{
+    t.classList.remove('selected');
+  });
+  // Find correct tile and select
+  document.querySelectorAll('.amount-tile').forEach(t=>{
+    const click = t.getAttribute('onclick');
+    if(click && click.includes(`selectAmount(${amt})`)) t.classList.add('selected');
+  });
+  updateSetupSummary();
+  updateConfirmBtn();
+}
+
+function selectMethod(method){
+  selectedAutoMethod = method;
+  _('method-online').classList.toggle('selected', method==='online');
+  _('method-ussd').classList.toggle('selected', method==='ussd');
+  updateSetupSummary();
+}
+
+function updateSetupSummary(){
+  const box = _('setupSummary');
+  if(selectedAutoAmount === null){
+    box.innerHTML = `
+      <div class="sum-icon"><i class="fas fa-circle-info"></i></div>
+      <div class="sum-text"><div class="sum-empty">اختار فئة وطريقة شحن لتفعيل الشحن التلقائي</div></div>`;
+    return;
+  }
+  const amtLabel = selectedAutoAmount === 0 ? '<span>أعلى فئة متاحة</span>' : `<span>${selectedAutoAmount} جنيه</span>`;
+  const methIcon = selectedAutoMethod==='online' ? 'fa-bolt' : 'fa-phone';
+  const methLabel = selectedAutoMethod==='online' ? 'شحن أونلاين مباشر' : 'شحن عبر USSD بالهاتف';
+  box.innerHTML = `
+    <div class="sum-icon" style="color:var(--green);background:rgba(0,200,90,.08);border-color:rgba(0,200,90,.2)"><i class="fas fa-check-double"></i></div>
+    <div class="sum-text">
+      <div class="sum-main">سيشحن بفئة ${amtLabel} تلقائياً</div>
+      <div class="sum-sub"><i class="fas ${methIcon}" style="margin-left:3px"></i>${methLabel}</div>
+    </div>`;
+}
+
+function updateConfirmBtn(){
+  _('btnConfirmAuto').disabled = selectedAutoAmount === null;
+}
+
+function confirmAutoSetup(){
+  autoSettings.amount  = selectedAutoAmount;
+  autoSettings.method  = selectedAutoMethod;
+  autoSettings.enabled = true;
+  saveAutoSettings();
+  _('autoToggle').checked = true;
+  updateAutoPrefDisplay();
+  closeAutoSetup();
+  autoCharged = false;
+  showToast('✅ تم ضبط الشحن التلقائي وتفعيله','ok');
+}
+
+// ══ MAIN ══
 (async()=>{
-  try{const r=await fetch('/check');const d=await r.json();if(d.logged){_('topNum').textContent=d.number;goTo('s-app');startPing();startCycle();return;}}catch{}
+  try{
+    const r=await fetch('/check');const d=await r.json();
+    if(d.logged){
+      _('topNum').textContent=d.number;
+      loadAutoSettings();
+      goTo('s-app');startPing();startCycle();return;
+    }
+  }catch{}
 })();
 
 async function doLogin(){
@@ -901,7 +1237,12 @@ async function doLogin(){
   try{
     const fd=new FormData();fd.append('number',num);fd.append('password',pw);
     const r=await fetch('/login',{method:'POST',body:fd});const d=await r.json();
-    if(d.ok){_('topNum').textContent=d.number;navigator.vibrate&&navigator.vibrate(30);goTo('s-app');startPing();startCycle();}
+    if(d.ok){
+      _('topNum').textContent=d.number;
+      navigator.vibrate&&navigator.vibrate(30);
+      loadAutoSettings();
+      goTo('s-app');startPing();startCycle();
+    }
     else{_('errMsg').textContent=d.error||'الرقم أو الباسورد غلط';_('errBox').style.display='flex';}
   }catch{_('errMsg').textContent='خطأ في الاتصال';_('errBox').style.display='flex';}
   btn.disabled=false;btn.innerHTML='<i class="fas fa-right-to-bracket"></i>&nbsp; دخـول';
@@ -922,23 +1263,42 @@ async function chargeCard(serial,amount,btn){
   try{
     const r=await fetch('/redeem?serial='+encodeURIComponent(serial)+'&amount='+encodeURIComponent(amount));const d=await r.json();
     if(d.ok){showToast('✅ تم الشحن بنجاح','ok');btn.classList.remove('loading');btn.classList.add('done');btn.innerHTML='<i class="fas fa-check"></i>&nbsp;<span>تم الشحن</span>';}
-    else{showToast('❌ فشل الشحن','err');btn.classList.remove('loading');btn.innerHTML='<i class="fas fa-bolt"></i>&nbsp;<span>شحن أونلاين</span>';}
-  }catch{showToast('❌ خطأ في الاتصال','err');btn.classList.remove('loading');btn.innerHTML='<i class="fas fa-bolt"></i>&nbsp;<span>شحن أونلاين</span>';}
+    else{showToast('❌ فشل الشحن','err');btn.classList.remove('loading');btn.innerHTML='<i class="fas fa-bolt"></i>&nbsp;<span>شحن أونلاين</span>';autoCharged=false;}
+  }catch{showToast('❌ خطأ في الاتصال','err');btn.classList.remove('loading');btn.innerHTML='<i class="fas fa-bolt"></i>&nbsp;<span>شحن أونلاين</span>';autoCharged=false;}
 }
 
 function renderCards(list,online){
   const wrap=_('cardsWrap'),cnt=_('ccnt');
   if(online!==undefined)_('st-online').textContent=online;
-  if(!list||!list.length){cnt.textContent='0';_('st-total').textContent='0';_('st-max').textContent='—';wrap.innerHTML='<div class="empty-wrap"><i class="fas fa-inbox"></i><p>لا توجد عروض متاحة الآن</p><small>يتجدد البحث تلقائياً...</small></div>';return;}
+  lastPromosList = list || [];
+  if(!list||!list.length){
+    cnt.textContent='0';_('st-total').textContent='0';_('st-max').textContent='—';
+    wrap.innerHTML='<div class="empty-wrap"><i class="fas fa-inbox"></i><p>لا توجد عروض متاحة الآن</p><small>يتجدد البحث تلقائياً...</small></div>';
+    return;
+  }
   cnt.textContent=list.length+' كرت';_('st-total').textContent=list.length;
   const bestAmt=Math.max(...list.map(c=>c.amount));_('st-max').textContent=bestAmt+' ج';
+
+  // Determine auto-charge target
+  let autoTarget = null;
+  if(autoSettings.enabled && !autoCharged){
+    if(autoSettings.amount===0){
+      autoTarget = list.find(p=>p.amount===bestAmt);
+    } else if(autoSettings.amount){
+      autoTarget = list.find(p=>p.amount===autoSettings.amount);
+      if(!autoTarget) autoTarget = list.find(p=>p.amount===bestAmt); // fallback
+    }
+  }
+
   wrap.innerHTML=list.map((p,i)=>{
     const ussd='*858*'+p.serial.replace(/\s/g,'')+'#';const isBest=p.amount===bestAmt;
+    const isAutoTarget = autoTarget && p.serial===autoTarget.serial;
     return`<div class="promo-card${isBest?' best-card':''}" style="--i:${i}">
       <div class="card-stripe"></div>
       <div class="card-body">
         <div class="card-chips">
           ${isBest?'<span class="chip chip-best"><i class="fas fa-star"></i>الأفضل</span>':''}
+          ${isAutoTarget?'<span class="chip chip-auto"><i class="fas fa-bolt"></i>شحن تلقائي</span>':''}
           <span class="chip chip-gold"><i class="fas fa-gift"></i>${esc(p.gift)} وحدة</span>
           <span class="chip chip-blue"><i class="fas fa-rotate"></i>${esc(p.remaining)} متبقي</span>
         </div>
@@ -954,13 +1314,38 @@ function renderCards(list,online){
       </div>
     </div>`;
   }).join('');
+
+  // Execute auto-charge
+  if(autoTarget && !autoCharged){
+    autoCharged = true;
+    if(autoSettings.method === 'ussd'){
+      // USSD auto
+      setTimeout(()=>{
+        const ussd = '*858*'+autoTarget.serial.replace(/\s/g,'')+'#';
+        window.location.href = 'tel:'+encodeURIComponent(ussd);
+        showToast('📞 جاري فتح مكالمة USSD...','ok');
+      }, 600);
+    } else {
+      // Online auto
+      setTimeout(()=>{
+        const cards = wrap.querySelectorAll('.promo-card');
+        cards.forEach(card=>{
+          const serialEl = card.querySelector('.serial-val');
+          if(serialEl && serialEl.textContent.trim()===autoTarget.serial){
+            const btn = card.querySelector('.btn-charge');
+            if(btn) btn.click();
+          }
+        });
+      }, 800);
+    }
+  }
 }
 
 let timerInt=null;const CIRC=2*Math.PI*16;
 function startTimer(cb){
-  let t=15;const num=_('tnum'),prog=_('tprog');if(!num||!prog)return;
+  let t=7;const num=_('tnum'),prog=_('tprog');if(!num||!prog)return;
   prog.style.strokeDasharray=CIRC;prog.style.strokeDashoffset=0;clearInterval(timerInt);
-  timerInt=setInterval(()=>{t--;num.textContent=Math.max(t,0);prog.style.strokeDashoffset=CIRC*(t/15);prog.style.stroke=t<=4?'#ff3333':'var(--red)';if(t<=0){clearInterval(timerInt);setTimeout(cb,200);}},1000);
+  timerInt=setInterval(()=>{t--;num.textContent=Math.max(t,0);prog.style.strokeDashoffset=CIRC*(t/7);prog.style.stroke=t<=3?'#ff3333':'var(--red)';if(t<=0){clearInterval(timerInt);setTimeout(cb,200);}},1000);
 }
 
 let lastBroadcastId='';
@@ -1107,10 +1492,6 @@ async function deleteSchedule(id){const fd=new FormData();fd.append('id',id);awa
 </script>
 </body>
 </html>"""
-
-# ══════════════════════════════════════════════════════
-#  ROUTES
-# ══════════════════════════════════════════════════════
 
 @app.route("/")
 def index():
@@ -1294,7 +1675,6 @@ def schedule_delete():
     write_schedule(items)
     return jsonify({"ok":True})
 
-# ══════════════════════════════════════════════════════
 if __name__ == "__main__":
     print("\n"+"═"*42)
     print("  TALASHNY  |  http://localhost:5000")
