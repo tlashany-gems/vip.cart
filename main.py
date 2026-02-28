@@ -1075,14 +1075,14 @@ input[type="datetime-local"]{color-scheme:dark;}
         أنا فودافون
       </div>
       <div class="login-title-row">
-        <span class="login-letter" style="--i:0">T</span>
-        <span class="login-letter" style="--i:1">A</span>
-        <span class="login-letter" style="--i:2">L</span>
-        <span class="login-letter" style="--i:3">A</span>
-        <span class="login-letter" style="--i:4">S</span>
-        <span class="login-letter" style="--i:5">H</span>
-        <span class="login-letter" style="--i:6">N</span>
-        <span class="login-letter" style="--i:7">Y</span>
+        <span class="login-letter" style="--i:0">Y</span>
+        <span class="login-letter" style="--i:1">N</span>
+        <span class="login-letter" style="--i:2">H</span>
+        <span class="login-letter" style="--i:3">S</span>
+        <span class="login-letter" style="--i:4">A</span>
+        <span class="login-letter" style="--i:5">l</span>
+        <span class="login-letter" style="--i:6">A</span>
+        <span class="login-letter" style="--i:7">T</span>
       </div>
       <div class="login-sub">سجّل دخولك بحساب فودافون</div>
     </div>
