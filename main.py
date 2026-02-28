@@ -1098,10 +1098,6 @@ input[type="datetime-local"]{color-scheme:dark;}
                onerror="this.outerHTML='<svg width=\'50\' height=\'50\' viewBox=\'0 0 60 60\' fill=\'none\'><path d=\'M32 7C17.6 7 6 18 6 31.5c0 7.6 3.7 14.4 9.5 18.8V54l8.8-5.9c2.3.6 4.7.9 7.3.9 14.4 0 26-11 26-24.5S46.4 7 32 7z\' fill=\'white\' opacity=\'0.9\'></path><path d=\'M19 22l13 22 13-22\' stroke=\'#c8a84b\' stroke-width=\'5\' stroke-linecap=\'round\' stroke-linejoin=\'round\' fill=\'none\'></path></svg>'"/>
         </div>
       </div>
-      <div class="login-app-tag">
-        <div class="login-app-tag-dot"></div>
-        أنا فودافون
-      </div>
       <div class="login-title-row">
         <span class="login-letter" style="--i:0">Y</span>
         <span class="login-letter" style="--i:1">N</span>
@@ -1579,10 +1575,10 @@ function confirmAutoSetup(){
 
 // ══ MAIN INIT — FIX: Check session, NOT auto-login after explicit logout ══
 (async()=>{
-  const splashPromise=new Promise(r=>setTimeout(r,2400));
+  const splashPromise=new Promise(r=>setTimeout(r,3000));
 
-  // Check if user explicitly logged out this session
-  const manuallyLoggedOut = sessionStorage.getItem('talashny_logged_out') === '1';
+  // If user explicitly logged out, ALWAYS show login (even if server session still alive)
+  const manuallyLoggedOut = localStorage.getItem('talashny_logged_out') === '1';
 
   let loggedIn=false,loggedNumber='';
   if(!manuallyLoggedOut){
@@ -1614,7 +1610,7 @@ async function doLogin(){
     const r=await fetch('/login',{method:'POST',body:fd});const d=await r.json();
     if(d.ok){
       // Clear the logged-out flag on successful login
-      sessionStorage.removeItem('talashny_logged_out');
+      localStorage.removeItem('talashny_logged_out');
       _('topNum').textContent=d.number;
       navigator.vibrate&&navigator.vibrate([30,20,30]);
       loadAutoSettings();goTo('s-app');startPing();startCycle();
@@ -1630,7 +1626,7 @@ _('logoutBtn').onclick=async()=>{
   clearInterval(timerInt);stopPing();
   autoCharged=false;
   // Set flag so app won't auto-login on next load
-  sessionStorage.setItem('talashny_logged_out','1');
+  localStorage.setItem('talashny_logged_out','1');
   goTo('s-login');
 };
 
