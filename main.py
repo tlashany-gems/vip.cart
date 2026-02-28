@@ -1024,14 +1024,14 @@ input[type="datetime-local"]{color-scheme:dark;}
     <div class="sp-label">أنا فودافون</div>
 
     <div class="sp-name">
-      <span class="sp-nl" style="--n:0">T</span>
-      <span class="sp-nl" style="--n:1">A</span>
-      <span class="sp-nl" style="--n:2">L</span>
-      <span class="sp-nl" style="--n:3">A</span>
-      <span class="sp-nl" style="--n:4">S</span>
-      <span class="sp-nl" style="--n:5">H</span>
-      <span class="sp-nl" style="--n:6">N</span>
-      <span class="sp-nl" style="--n:7">Y</span>
+      <span class="sp-nl" style="--n:0">Y</span>
+      <span class="sp-nl" style="--n:1">N</span>
+      <span class="sp-nl" style="--n:2">H</span>
+      <span class="sp-nl" style="--n:3">S</span>
+      <span class="sp-nl" style="--n:4">A</span>
+      <span class="sp-nl" style="--n:5">I</span>
+      <span class="sp-nl" style="--n:6">A</span>
+      <span class="sp-nl" style="--n:7">T</span>
     </div>
 
     <div class="sp-sub">كروت رمضان &nbsp;<span>·</span>&nbsp; شحن تلقائي</div>
