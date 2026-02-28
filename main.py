@@ -360,11 +360,21 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 @keyframes livePulse{0%,100%{box-shadow:0 0 0 0 rgba(0,200,90,.5);}70%{box-shadow:0 0 0 5px rgba(0,200,90,0);}}
 
 /* LOGIN */
-#s-login{background:radial-gradient(ellipse 70% 40% at 50% 0%,rgba(230,0,0,.09),transparent 65%),var(--bg);padding:24px 18px;overflow-y:auto;}
+#s-login{background:radial-gradient(ellipse 80% 50% at 50% 0%,rgba(230,0,0,.13),transparent 60%),var(--bg);padding:24px 18px;overflow-y:auto;}
 .login-wrap{width:100%;max-width:370px;}
 .login-head{text-align:center;margin-bottom:26px;}
-.login-logo-box{width:68px;height:68px;border-radius:18px;margin:0 auto 13px;background:linear-gradient(145deg,#180000,#0d0d0d);border:1px solid rgba(230,0,0,.2);display:flex;align-items:center;justify-content:center;box-shadow:0 0 36px rgba(230,0,0,.12),0 8px 24px rgba(0,0,0,.5);}
-.login-logo-box img{width:38px;}
+
+/* VF APP LOGO */
+.vf-logo-wrap{width:110px;height:110px;margin:0 auto 18px;position:relative;}
+.vf-logo-bg{position:absolute;inset:0;border-radius:28px;background:linear-gradient(145deg,#c80000 0%,#e60000 40%,#ff1a1a 70%,#cc0000 100%);box-shadow:0 0 0 1px rgba(255,80,80,.15),0 8px 32px rgba(230,0,0,.45),0 2px 8px rgba(0,0,0,.6);overflow:hidden;}
+.vf-logo-bg::before{content:'';position:absolute;top:-30%;left:-20%;width:80%;height:80%;background:radial-gradient(circle,rgba(255,255,255,.18) 0%,transparent 70%);pointer-events:none;}
+.vf-logo-bg::after{content:'';position:absolute;bottom:0;right:0;width:60%;height:60%;background:radial-gradient(circle,rgba(0,0,0,.25) 0%,transparent 70%);pointer-events:none;}
+.vf-logo-inner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
+.vf-mark{width:52px;height:52px;}
+.vf-app-label{font-family:'Cairo',sans-serif;font-size:.48rem;font-weight:800;color:rgba(255,255,255,.75);letter-spacing:1.5px;text-transform:uppercase;}
+.vf-logo-ring{position:absolute;inset:-4px;border-radius:32px;border:1.5px solid rgba(230,0,0,.25);pointer-events:none;}
+.vf-logo-ring2{position:absolute;inset:-9px;border-radius:37px;border:1px solid rgba(230,0,0,.1);pointer-events:none;}
+
 .login-title{font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:900;letter-spacing:5px;color:var(--ink);}
 .login-title em{font-style:italic;color:transparent;background:linear-gradient(135deg,var(--g1),var(--g2),var(--g1));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
 .login-sub{font-size:.65rem;color:var(--ink3);letter-spacing:1.5px;margin-top:3px;}
@@ -686,6 +696,32 @@ input[type="datetime-local"]{color-scheme:dark;}
 .sched-time-badge.done-badge{background:rgba(0,200,90,.07);color:var(--green);}
 .hist-empty{text-align:center;padding:24px;color:var(--ink3);font-size:.65rem;}
 ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:var(--l1);}::-webkit-scrollbar-thumb{background:rgba(230,0,0,.3);border-radius:3px;}
+
+/* UNITS PICKER */
+.units-section{margin-bottom:18px;}
+.units-display-row{display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:14px;}
+.units-btn{width:44px;height:44px;border-radius:12px;border:1.5px solid var(--stroke);background:var(--l2);color:var(--ink2);font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s cubic-bezier(.34,1.4,.64,1);flex-shrink:0;}
+.units-btn:hover{border-color:rgba(230,0,0,.35);background:rgba(230,0,0,.07);color:var(--red);}
+.units-btn:active{transform:scale(.88);}
+.units-val-wrap{flex:1;text-align:center;padding:0 10px;}
+.units-num{font-family:'Playfair Display',serif;font-size:3rem;font-weight:900;color:var(--ink);line-height:1;transition:color .2s;}
+.units-num.changed{color:var(--red);animation:unitPop .3s cubic-bezier(.34,1.6,.64,1);}
+@keyframes unitPop{0%{transform:scale(.8)}100%{transform:scale(1)}}
+.units-label{font-size:.55rem;font-weight:700;color:var(--ink3);letter-spacing:1.5px;margin-top:3px;}
+.units-presets{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;}
+.unit-preset{padding:6px 14px;border-radius:100px;background:var(--l2);border:1.5px solid var(--stroke);font-family:'Cairo',sans-serif;font-size:.6rem;font-weight:800;color:var(--ink3);cursor:pointer;transition:all .2s;}
+.unit-preset:hover{border-color:rgba(200,168,75,.3);color:var(--g2);}
+.unit-preset.active{background:rgba(200,168,75,.08);border-color:rgba(200,168,75,.5);color:var(--g2);}
+.unit-preset.max-preset{border-color:rgba(230,0,0,.25);color:var(--red);background:rgba(230,0,0,.05);}
+.unit-preset.max-preset.active{background:rgba(230,0,0,.1);border-color:rgba(230,0,0,.5);}
+.units-slider-wrap{padding:0 4px;}
+.units-slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;background:var(--l3);outline:none;cursor:pointer;}
+.units-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--red2),var(--red));border:2px solid rgba(255,80,80,.3);cursor:pointer;box-shadow:0 0 10px rgba(230,0,0,.4);transition:transform .15s,box-shadow .15s;}
+.units-slider::-webkit-slider-thumb:hover{transform:scale(1.2);box-shadow:0 0 16px rgba(230,0,0,.6);}
+.units-slider::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--red2),var(--red));border:2px solid rgba(255,80,80,.3);cursor:pointer;}
+.units-range-labels{display:flex;justify-content:space-between;font-size:.48rem;color:var(--ink3);font-weight:700;margin-top:6px;padding:0 4px;}
+.units-tip{display:flex;align-items:center;gap:6px;background:rgba(200,168,75,.05);border:1px solid rgba(200,168,75,.12);border-radius:10px;padding:8px 12px;margin-top:10px;font-size:.58rem;color:var(--ink3);}
+.units-tip i{color:var(--g2);font-size:.6rem;flex-shrink:0;}
 </style>
 </head>
 <body>
@@ -694,8 +730,22 @@ input[type="datetime-local"]{color-scheme:dark;}
 <div id="s-login" class="screen active">
   <div class="login-wrap">
     <div class="login-head">
-      <div class="login-logo-box">
-        <img src="https://tlashane.serv00.net/vo/vodafone2.png" alt="" onerror="this.style.display='none';this.parentElement.innerHTML='<i class=\'fas fa-bolt\' style=\'color:var(--g1);font-size:1.2rem\'></i>'"/>
+      <div class="vf-logo-wrap">
+        <div class="vf-logo-bg"></div>
+        <div class="vf-logo-inner">
+          <!-- Vodafone speech-bubble mark in SVG -->
+          <svg class="vf-mark" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Outer ring glow -->
+            <circle cx="50" cy="50" r="46" fill="rgba(255,255,255,0.06)"/>
+            <!-- Speech bubble body -->
+            <path d="M50 8C27.9 8 10 24.5 10 45c0 12.2 6.3 23 16 29.8V88l14-9.5C43.2 79.5 46.5 80 50 80c22.1 0 40-16.5 40-35S72.1 8 50 8z" fill="white" opacity="0.95"/>
+            <!-- Vodafone V lettermark -->
+            <path d="M33 28 L50 62 L67 28" stroke="#e60000" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+          <span class="vf-app-label">أنا فودافون</span>
+        </div>
+        <div class="vf-logo-ring"></div>
+        <div class="vf-logo-ring2"></div>
       </div>
       <div class="login-title"><em>TALASHNY</em></div>
       <div class="login-sub">سجّل دخولك بحساب فودافون</div>
@@ -838,6 +888,31 @@ input[type="datetime-local"]{color-scheme:dark;}
         <div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--ink3);font-size:.65rem">
           <i class="fas fa-spinner fa-spin" style="color:var(--red)"></i>&nbsp;جاري تحميل الكروت...
         </div>
+      </div>
+
+      <!-- UNITS SECTION -->
+      <div class="section-label">عدد الوحدات المطلوبة</div>
+      <div class="units-section">
+        <div class="units-display-row">
+          <button class="units-btn" onclick="changeUnits(-1)" id="unitsMinus"><i class="fas fa-minus"></i></button>
+          <div class="units-val-wrap">
+            <div class="units-num" id="unitsNum">500</div>
+            <div class="units-label">وحدة كحد أدنى</div>
+          </div>
+          <button class="units-btn" onclick="changeUnits(1)" id="unitsPlus"><i class="fas fa-plus"></i></button>
+        </div>
+        <div class="units-presets">
+          <div class="unit-preset" onclick="setUnitsPreset(100)">100</div>
+          <div class="unit-preset" onclick="setUnitsPreset(250)">250</div>
+          <div class="unit-preset active" onclick="setUnitsPreset(500)">500</div>
+          <div class="unit-preset" onclick="setUnitsPreset(1000)">1000</div>
+          <div class="unit-preset max-preset" onclick="setUnitsPreset(0)"><i class="fas fa-infinity" style="font-size:.55rem"></i>&nbsp;أي عدد</div>
+        </div>
+        <div class="units-slider-wrap">
+          <input type="range" class="units-slider" id="unitsSlider" min="0" max="2000" step="50" value="500" oninput="onSliderInput(this.value)"/>
+          <div class="units-range-labels"><span>أي عدد</span><span>500</span><span>1000</span><span>1500</span><span>2000+</span></div>
+        </div>
+        <div class="units-tip"><i class="fas fa-lightbulb"></i> سيشحن بالكرت اللي وحداته أكبر من أو تساوي العدد المحدد</div>
       </div>
 
       <!-- METHOD SECTION -->
@@ -1041,8 +1116,9 @@ function stopPing(){clearInterval(pingInt);}
 // ══ AUTO-CHARGE SETTINGS ══
 let autoSettings = {
   enabled: false,
-  amount: null,   // null = أي فئة / number = فئة محددة
-  method: 'online' // 'online' | 'ussd'
+  amount: null,   // null = أي فئة / number = فئة محددة / 0 = أعلى فئة
+  method: 'online', // 'online' | 'ussd'
+  minUnits: 500   // 0 = أي عدد
 };
 let autoCharged = false;
 let lastPromosList = [];
@@ -1053,6 +1129,7 @@ function loadAutoSettings(){
     if(s.method) autoSettings.method = s.method;
     if(s.amount !== undefined) autoSettings.amount = s.amount;
     if(s.enabled !== undefined) autoSettings.enabled = s.enabled;
+    if(s.minUnits !== undefined) autoSettings.minUnits = s.minUnits;
   }catch{}
   _('autoToggle').checked = autoSettings.enabled;
   updateAutoPrefDisplay();
@@ -1086,25 +1163,66 @@ function updateAutoPrefDisplay(){
   }
   const amtLabel = autoSettings.amount === 0 ? 'أعلى فئة' : autoSettings.amount + ' جنيه';
   const methLabel = autoSettings.method === 'online' ? 'أونلاين' : 'بالهاتف';
-  el.innerHTML = `<i class="fas fa-bolt" style="font-size:.4rem;color:var(--red)"></i><span>${amtLabel} — ${methLabel}</span>`;
+  const unitsLabel = autoSettings.minUnits > 0 ? ' · ' + autoSettings.minUnits + '+ وحدة' : '';
+  el.innerHTML = `<i class="fas fa-bolt" style="font-size:.4rem;color:var(--red)"></i><span>${amtLabel} — ${methLabel}${unitsLabel}</span>`;
 }
 
 // ══ MODAL ══
 let selectedAutoAmount = null;
 let selectedAutoMethod = 'online';
+let selectedMinUnits = 500;
 
 function openAutoSetup(){
   selectedAutoAmount = autoSettings.amount;
   selectedAutoMethod = autoSettings.method || 'online';
+  selectedMinUnits   = autoSettings.minUnits !== undefined ? autoSettings.minUnits : 500;
   _('autoSetupModal').classList.add('open');
   renderAmountGrid(lastPromosList);
   selectMethod(selectedAutoMethod);
+  // Init units UI
+  setUnitsUI(selectedMinUnits);
   updateSetupSummary();
   updateConfirmBtn();
 }
 
 function closeAutoSetup(){
   _('autoSetupModal').classList.remove('open');
+}
+
+// ── UNITS LOGIC ──
+function setUnitsUI(val){
+  selectedMinUnits = val;
+  const numEl = _('unitsNum');
+  if(numEl){
+    numEl.textContent = val === 0 ? '∞' : val;
+    numEl.classList.remove('changed');
+    void numEl.offsetWidth;
+    numEl.classList.add('changed');
+    setTimeout(()=>numEl.classList.remove('changed'), 400);
+  }
+  const slider = _('unitsSlider');
+  if(slider) slider.value = val;
+  // Update presets
+  document.querySelectorAll('.unit-preset').forEach(p=>{
+    const pv = p.getAttribute('onclick');
+    p.classList.toggle('active', pv && pv.includes(`(${val})`));
+  });
+  updateSetupSummary();
+}
+
+function changeUnits(delta){
+  const step = 50;
+  let v = selectedMinUnits === 0 ? 0 : selectedMinUnits;
+  v = Math.max(0, Math.min(2000, v + delta * step));
+  setUnitsUI(v);
+}
+
+function setUnitsPreset(val){
+  setUnitsUI(val);
+}
+
+function onSliderInput(val){
+  setUnitsUI(parseInt(val));
 }
 
 _('autoSetupModal').addEventListener('click', function(e){
@@ -1193,11 +1311,13 @@ function updateSetupSummary(){
   const amtLabel = selectedAutoAmount === 0 ? '<span>أعلى فئة متاحة</span>' : `<span>${selectedAutoAmount} جنيه</span>`;
   const methIcon = selectedAutoMethod==='online' ? 'fa-bolt' : 'fa-phone';
   const methLabel = selectedAutoMethod==='online' ? 'شحن أونلاين مباشر' : 'شحن عبر USSD بالهاتف';
+  const unitsLabel = selectedMinUnits > 0 ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:.5rem;font-weight:700;color:var(--g2);background:rgba(200,168,75,.07);border:1px solid rgba(200,168,75,.15);padding:2px 8px;border-radius:100px"><i class="fas fa-layer-group"></i>&nbsp;${selectedMinUnits}+ وحدة</span>` : `<span style="display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:.5rem;font-weight:700;color:var(--ink3);background:rgba(255,255,255,.04);padding:2px 8px;border-radius:100px"><i class="fas fa-infinity"></i>&nbsp;أي عدد وحدات</span>`;
   box.innerHTML = `
     <div class="sum-icon" style="color:var(--green);background:rgba(0,200,90,.08);border-color:rgba(0,200,90,.2)"><i class="fas fa-check-double"></i></div>
     <div class="sum-text">
       <div class="sum-main">سيشحن بفئة ${amtLabel} تلقائياً</div>
       <div class="sum-sub"><i class="fas ${methIcon}" style="margin-left:3px"></i>${methLabel}</div>
+      <div>${unitsLabel}</div>
     </div>`;
 }
 
@@ -1206,14 +1326,16 @@ function updateConfirmBtn(){
 }
 
 function confirmAutoSetup(){
-  autoSettings.amount  = selectedAutoAmount;
-  autoSettings.method  = selectedAutoMethod;
-  autoSettings.enabled = true;
+  autoSettings.amount   = selectedAutoAmount;
+  autoSettings.method   = selectedAutoMethod;
+  autoSettings.minUnits = selectedMinUnits;
+  autoSettings.enabled  = true;
   saveAutoSettings();
   _('autoToggle').checked = true;
   updateAutoPrefDisplay();
   closeAutoSetup();
   autoCharged = false;
+  const unitsInfo = selectedMinUnits > 0 ? ` · ${selectedMinUnits}+ وحدة` : '';
   showToast('✅ تم ضبط الشحن التلقائي وتفعيله','ok');
 }
 
@@ -1279,14 +1401,21 @@ function renderCards(list,online){
   cnt.textContent=list.length+' كرت';_('st-total').textContent=list.length;
   const bestAmt=Math.max(...list.map(c=>c.amount));_('st-max').textContent=bestAmt+' ج';
 
-  // Determine auto-charge target
+  // Determine auto-charge target (filtered by minUnits)
   let autoTarget = null;
   if(autoSettings.enabled && !autoCharged){
-    if(autoSettings.amount===0){
-      autoTarget = list.find(p=>p.amount===bestAmt);
-    } else if(autoSettings.amount){
-      autoTarget = list.find(p=>p.amount===autoSettings.amount);
-      if(!autoTarget) autoTarget = list.find(p=>p.amount===bestAmt); // fallback
+    const minU = autoSettings.minUnits || 0;
+    // Filter cards that meet the minimum units requirement
+    const eligible = minU > 0 ? list.filter(p => p.gift >= minU) : list;
+    if(eligible.length > 0){
+      if(autoSettings.amount === 0){
+        // Highest amount from eligible
+        const bestEligible = Math.max(...eligible.map(p=>p.amount));
+        autoTarget = eligible.find(p=>p.amount===bestEligible);
+      } else if(autoSettings.amount){
+        autoTarget = eligible.find(p=>p.amount===autoSettings.amount);
+        if(!autoTarget) autoTarget = eligible.find(p=>p.amount===Math.max(...eligible.map(p=>p.amount)));
+      }
     }
   }
 
