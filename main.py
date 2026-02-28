@@ -359,25 +359,163 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 .live-dot{width:5px;height:5px;border-radius:50%;background:var(--green);flex-shrink:0;animation:livePulse 2s infinite;cursor:pointer;transition:transform .2s,box-shadow .2s;}
 @keyframes livePulse{0%,100%{box-shadow:0 0 0 0 rgba(0,200,90,.5);}70%{box-shadow:0 0 0 5px rgba(0,200,90,0);}}
 
-/* LOGIN */
-#s-login{background:radial-gradient(ellipse 80% 50% at 50% 0%,rgba(230,0,0,.13),transparent 60%),var(--bg);padding:24px 18px;overflow-y:auto;}
-.login-wrap{width:100%;max-width:370px;}
-.login-head{text-align:center;margin-bottom:26px;}
+/* ══════════════════════════════════
+   SPLASH SCREEN
+══════════════════════════════════ */
+#s-splash{
+  background:#07070a;
+  z-index:9999;
+  overflow:hidden;
+}
+#s-splash.active{opacity:1;pointer-events:all;}
+#s-splash.fade-out{opacity:0;pointer-events:none;transition:opacity .6s ease;}
 
-/* VF APP LOGO */
-.vf-logo-wrap{width:110px;height:110px;margin:0 auto 18px;position:relative;}
-.vf-logo-bg{position:absolute;inset:0;border-radius:28px;background:linear-gradient(145deg,#c80000 0%,#e60000 40%,#ff1a1a 70%,#cc0000 100%);box-shadow:0 0 0 1px rgba(255,80,80,.15),0 8px 32px rgba(230,0,0,.45),0 2px 8px rgba(0,0,0,.6);overflow:hidden;}
-.vf-logo-bg::before{content:'';position:absolute;top:-30%;left:-20%;width:80%;height:80%;background:radial-gradient(circle,rgba(255,255,255,.18) 0%,transparent 70%);pointer-events:none;}
-.vf-logo-bg::after{content:'';position:absolute;bottom:0;right:0;width:60%;height:60%;background:radial-gradient(circle,rgba(0,0,0,.25) 0%,transparent 70%);pointer-events:none;}
-.vf-logo-inner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
-.vf-mark{width:52px;height:52px;}
-.vf-app-label{font-family:'Cairo',sans-serif;font-size:.48rem;font-weight:800;color:rgba(255,255,255,.75);letter-spacing:1.5px;text-transform:uppercase;}
-.vf-logo-ring{position:absolute;inset:-4px;border-radius:32px;border:1.5px solid rgba(230,0,0,.25);pointer-events:none;}
-.vf-logo-ring2{position:absolute;inset:-9px;border-radius:37px;border:1px solid rgba(230,0,0,.1);pointer-events:none;}
+/* radial pulse rings */
+.splash-bg{position:absolute;inset:0;overflow:hidden;}
+.splash-ring{position:absolute;border-radius:50%;border:1px solid rgba(230,0,0,.1);top:50%;left:50%;transform:translate(-50%,-50%);}
+.splash-ring:nth-child(1){width:160px;height:160px;animation:sRing 3s ease-out infinite;}
+.splash-ring:nth-child(2){width:260px;height:260px;animation:sRing 3s ease-out .5s infinite;}
+.splash-ring:nth-child(3){width:380px;height:380px;animation:sRing 3s ease-out 1s infinite;}
+.splash-ring:nth-child(4){width:520px;height:520px;animation:sRing 3s ease-out 1.5s infinite;}
+@keyframes sRing{0%{opacity:.6;transform:translate(-50%,-50%) scale(.7);}100%{opacity:0;transform:translate(-50%,-50%) scale(1.15);}}
 
-.login-title{font-family:'Playfair Display',serif;font-size:1.5rem;font-weight:900;letter-spacing:5px;color:var(--ink);}
-.login-title em{font-style:italic;color:transparent;background:linear-gradient(135deg,var(--g1),var(--g2),var(--g1));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.login-sub{font-size:.65rem;color:var(--ink3);letter-spacing:1.5px;margin-top:3px;}
+.splash-center{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:0;}
+
+/* Main icon container */
+.splash-icon-wrap{position:relative;margin-bottom:32px;}
+.splash-icon-glow{position:absolute;inset:-30px;border-radius:50%;background:radial-gradient(circle,rgba(230,0,0,.22) 0%,transparent 70%);animation:glowPulse 2s ease-in-out infinite;}
+@keyframes glowPulse{0%,100%{transform:scale(.9);opacity:.6;}50%{transform:scale(1.1);opacity:1;}}
+
+/* The app icon itself */
+.splash-app-icon{width:100px;height:100px;border-radius:26px;position:relative;overflow:hidden;
+  background:linear-gradient(145deg,#b80000 0%,#e60000 45%,#ff3333 70%,#c40000 100%);
+  box-shadow:0 0 0 1.5px rgba(255,100,100,.2), 0 12px 40px rgba(230,0,0,.5), 0 4px 12px rgba(0,0,0,.7);
+  animation:iconIn .7s cubic-bezier(.34,1.4,.64,1) .2s both;
+}
+@keyframes iconIn{from{opacity:0;transform:scale(.5) rotate(-8deg);}to{opacity:1;transform:scale(1) rotate(0);}}
+.splash-app-icon::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;background:linear-gradient(180deg,rgba(255,255,255,.18) 0%,transparent 100%);border-radius:26px 26px 0 0;}
+
+/* SVG mark inside icon */
+.splash-vf-svg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+
+/* Notification badge */
+.splash-badge{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--g3),var(--g2));border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;animation:badgeIn .5s cubic-bezier(.34,1.6,.64,1) .9s both;}
+@keyframes badgeIn{from{opacity:0;transform:scale(0);}to{opacity:1;transform:scale(1);}}
+.splash-badge i{font-size:.5rem;color:#1a0e00;}
+
+/* App name */
+.splash-app-name{font-family:'Cairo',sans-serif;font-size:1rem;font-weight:900;color:rgba(255,255,255,.9);letter-spacing:3px;animation:fadeUp .6s ease .5s both;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+
+/* TALASHNY title */
+.splash-title-wrap{display:flex;align-items:center;gap:0;margin-top:6px;animation:fadeUp .6s ease .65s both;}
+.splash-letter{font-family:'Playfair Display',serif;font-size:2rem;font-weight:900;color:transparent;
+  background:linear-gradient(90deg,#888 0%,#fff 30%,#ddd 50%,#fff 70%,#777 100%);
+  background-size:300% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  animation:chromeLetters 4s linear infinite,letterIn .5s cubic-bezier(.34,1.5,.64,1) both;
+  animation-delay:calc(.7s + var(--li)*.08s), calc(.7s + var(--li)*.08s);}
+@keyframes chromeLetters{0%{background-position:300% center}100%{background-position:-300% center}}
+@keyframes letterIn{from{opacity:0;transform:translateY(20px) scale(.6);}to{opacity:1;transform:none;}}
+
+.splash-tagline{font-size:.6rem;font-weight:700;color:var(--ink3);letter-spacing:2px;margin-top:12px;animation:fadeUp .6s ease 1.3s both;}
+
+/* Progress bar at bottom */
+.splash-progress-wrap{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);width:120px;}
+.splash-progress-track{height:2px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;}
+.splash-progress-fill{height:100%;background:linear-gradient(90deg,var(--red),var(--g1));border-radius:2px;width:0%;animation:splashLoad 1.8s cubic-bezier(.4,0,.2,1) .4s forwards;}
+@keyframes splashLoad{0%{width:0%;}60%{width:70%;}80%{width:85%;}100%{width:100%;}}
+.splash-version{text-align:center;font-size:.48rem;color:var(--ink3);margin-top:8px;letter-spacing:1px;animation:fadeUp .4s ease 1.8s both;}
+
+/* Vodafone brand strip at very bottom */
+.splash-vf-strip{position:absolute;bottom:20px;display:flex;align-items:center;gap:7px;animation:fadeUp .5s ease 1.6s both;}
+.splash-vf-dot{width:8px;height:8px;border-radius:50%;background:var(--red);}
+.splash-vf-text{font-size:.52rem;font-weight:700;color:var(--ink3);letter-spacing:1.5px;}
+
+/* ══════════════════════════════════
+   LOGIN SCREEN
+══════════════════════════════════ */
+#s-login{background:var(--bg);padding:0;overflow-y:auto;justify-content:flex-start;}
+#s-login.active .login-wrap{animation:loginIn .5s cubic-bezier(.34,1.2,.64,1) both;}
+@keyframes loginIn{from{opacity:0;transform:translateY(30px);}to{opacity:1;transform:none;}}
+
+.login-wrap{width:100%;max-width:380px;margin:0 auto;padding:0 18px 40px;}
+
+/* Hero section */
+.login-hero{
+  background:linear-gradient(180deg,rgba(230,0,0,.12) 0%,rgba(230,0,0,.04) 50%,transparent 100%);
+  padding:40px 0 28px;
+  text-align:center;
+  margin:0 -18px 24px;
+  position:relative;
+  overflow:hidden;
+}
+.login-hero::before{
+  content:'';position:absolute;inset:0;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='400' height='200' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events:none;
+}
+
+/* New clean logo */
+.login-logo-outer{width:80px;height:80px;margin:0 auto 16px;position:relative;}
+.login-logo-outer::before{
+  content:'';position:absolute;inset:-8px;border-radius:50%;
+  background:conic-gradient(from 0deg,rgba(230,0,0,.3),rgba(230,0,0,.05),rgba(200,168,75,.2),rgba(230,0,0,.3));
+  animation:spinRing 6s linear infinite;
+}
+@keyframes spinRing{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+.login-logo-outer::after{content:'';position:absolute;inset:-2px;border-radius:50%;background:var(--bg);}
+
+.login-logo-circle{
+  position:relative;z-index:1;
+  width:80px;height:80px;border-radius:50%;
+  background:linear-gradient(145deg,#cc0000 0%,#e60000 50%,#ff2020 100%);
+  box-shadow:0 0 30px rgba(230,0,0,.4),0 4px 16px rgba(0,0,0,.6);
+  display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
+}
+.login-logo-circle::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,transparent 100%);}
+
+.login-vmark{width:44px;height:44px;position:relative;z-index:1;}
+
+.login-app-tag{
+  display:inline-flex;align-items:center;gap:5px;
+  background:rgba(230,0,0,.1);border:1px solid rgba(230,0,0,.2);
+  border-radius:100px;padding:4px 12px;
+  font-size:.55rem;font-weight:800;color:rgba(230,0,0,.8);letter-spacing:1px;
+  margin-bottom:10px;
+}
+.login-app-tag-dot{width:5px;height:5px;border-radius:50%;background:var(--red);animation:blink 1.5s infinite;}
+
+.login-title-row{display:flex;align-items:center;justify-content:center;gap:3px;}
+.login-letter{font-family:'Playfair Display',serif;font-size:1.8rem;font-weight:900;color:transparent;
+  background:linear-gradient(90deg,#999 0%,#fff 35%,#ccc 55%,#fff 75%,#888 100%);
+  background-size:300% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  animation:chrome 5s linear infinite;animation-delay:calc(var(--i)*.15s);
+}
+.login-sub{font-size:.62rem;color:var(--ink3);letter-spacing:1px;margin-top:6px;}
+
+/* Login card */
+.login-card{background:var(--l1);border:1px solid var(--stroke);border-radius:20px;padding:22px 18px;box-shadow:0 16px 48px rgba(0,0,0,.7),0 0 0 1px rgba(200,168,75,.04);}
+.card-sep{font-size:.52rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);text-align:center;margin-bottom:16px;display:flex;align-items:center;gap:10px;}
+.card-sep::before,.card-sep::after{content:'';flex:1;height:1px;background:var(--stroke);}
+.lf-field{margin-bottom:13px;}
+.lf-field label{display:block;font-size:.55rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink3);margin-bottom:7px;transition:color .2s;}
+.lf-field:focus-within label{color:rgba(230,0,0,.9);}
+.input-box{display:flex;align-items:center;background:var(--l2);border:1.5px solid var(--stroke);border-radius:var(--r-sm);overflow:hidden;transition:border-color .25s,box-shadow .25s;}
+.lf-field:focus-within .input-box{border-color:rgba(230,0,0,.4);box-shadow:0 0 0 3px rgba(230,0,0,.08);}
+.input-box input{flex:1;background:none;border:none;outline:none;font-family:'Cairo',sans-serif;font-size:.9rem;font-weight:700;color:var(--ink);padding:13px 14px;direction:rtl;}
+.input-box input::placeholder{color:var(--ink3);font-weight:600;font-size:.75rem;}
+.input-box .ico{width:42px;text-align:center;font-size:.78rem;color:var(--ink3);transition:color .2s;flex-shrink:0;}
+.lf-field:focus-within .ico{color:var(--red);}
+.err-box{display:flex;align-items:center;gap:8px;background:rgba(230,0,0,.06);border:1px solid rgba(230,0,0,.2);border-radius:10px;padding:10px 13px;margin-bottom:12px;font-size:.7rem;font-weight:700;color:#ff6060;animation:shake .3s ease;}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+.btn-login{width:100%;padding:14px;border:none;border-radius:var(--r-sm);background:linear-gradient(135deg,#cc0000,var(--red),#ff2a2a);color:#fff;font-family:'Cairo',sans-serif;font-size:.9rem;font-weight:900;cursor:pointer;position:relative;overflow:hidden;box-shadow:0 5px 22px rgba(230,0,0,.35);transition:transform .2s,box-shadow .2s;margin-top:2px;}
+.btn-login::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.12) 0%,transparent 55%);}
+.btn-login:hover{transform:translateY(-1px);box-shadow:0 9px 30px rgba(230,0,0,.5);}
+.btn-login:active{transform:scale(.97);}
+.btn-login:disabled{opacity:.45;cursor:wait;transform:none;}
+.sec-note{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:11px;font-size:.55rem;color:var(--ink3);}
+.sec-note i{color:rgba(0,200,90,.5);}
 .login-card{background:var(--l1);border:1px solid var(--stroke);border-radius:18px;padding:20px 16px;box-shadow:0 12px 40px rgba(0,0,0,.6);}
 .card-sep{font-size:.53rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--ink3);text-align:center;margin-bottom:16px;display:flex;align-items:center;gap:10px;}
 .card-sep::before,.card-sep::after{content:'';flex:1;height:1px;background:var(--stroke);}
@@ -726,30 +864,91 @@ input[type="datetime-local"]{color-scheme:dark;}
 </head>
 <body>
 
-<!-- LOGIN -->
-<div id="s-login" class="screen active">
-  <div class="login-wrap">
-    <div class="login-head">
-      <div class="vf-logo-wrap">
-        <div class="vf-logo-bg"></div>
-        <div class="vf-logo-inner">
-          <!-- Vodafone speech-bubble mark in SVG -->
-          <svg class="vf-mark" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- Outer ring glow -->
-            <circle cx="50" cy="50" r="46" fill="rgba(255,255,255,0.06)"/>
-            <!-- Speech bubble body -->
-            <path d="M50 8C27.9 8 10 24.5 10 45c0 12.2 6.3 23 16 29.8V88l14-9.5C43.2 79.5 46.5 80 50 80c22.1 0 40-16.5 40-35S72.1 8 50 8z" fill="white" opacity="0.95"/>
-            <!-- Vodafone V lettermark -->
-            <path d="M33 28 L50 62 L67 28" stroke="#e60000" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+<!-- ══ SPLASH SCREEN ══ -->
+<div id="s-splash" class="screen active">
+  <div class="splash-bg">
+    <div class="splash-ring"></div>
+    <div class="splash-ring"></div>
+    <div class="splash-ring"></div>
+    <div class="splash-ring"></div>
+  </div>
+  <div class="splash-center">
+    <div class="splash-icon-wrap">
+      <div class="splash-icon-glow"></div>
+      <div class="splash-app-icon">
+        <div class="splash-vf-svg">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+            <!-- speech bubble shape -->
+            <path d="M32 6C16.5 6 4 17.2 4 31c0 8.1 4.2 15.3 10.7 19.9V54l9.3-6.3C26.4 48.2 29.1 48.6 32 48.6c15.5 0 28-11.2 28-25.3S47.5 6 32 6z" fill="white" opacity="0.93"/>
+            <!-- V mark -->
+            <path d="M20 19 L32 41 L44 19" stroke="#e60000" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           </svg>
-          <span class="vf-app-label">أنا فودافون</span>
         </div>
-        <div class="vf-logo-ring"></div>
-        <div class="vf-logo-ring2"></div>
       </div>
-      <div class="login-title"><em>TALASHNY</em></div>
+      <div class="splash-badge"><i class="fas fa-bolt"></i></div>
+    </div>
+
+    <div class="splash-app-name">أنا فودافون</div>
+
+    <div class="splash-title-wrap">
+      <span class="splash-letter" style="--li:0">T</span>
+      <span class="splash-letter" style="--li:1">A</span>
+      <span class="splash-letter" style="--li:2">L</span>
+      <span class="splash-letter" style="--li:3">A</span>
+      <span class="splash-letter" style="--li:4">S</span>
+      <span class="splash-letter" style="--li:5">H</span>
+      <span class="splash-letter" style="--li:6">N</span>
+      <span class="splash-letter" style="--li:7">Y</span>
+    </div>
+    <div class="splash-tagline">كروت رمضان — شحن تلقائي</div>
+  </div>
+
+  <div class="splash-progress-wrap">
+    <div class="splash-progress-track">
+      <div class="splash-progress-fill"></div>
+    </div>
+    <div class="splash-version">v2.0 · فودافون مصر</div>
+  </div>
+
+  <div class="splash-vf-strip">
+    <div class="splash-vf-dot"></div>
+    <div class="splash-vf-text">POWERED BY VODAFONE EG</div>
+    <div class="splash-vf-dot"></div>
+  </div>
+</div>
+
+<!-- ══ LOGIN ══ -->
+<div id="s-login" class="screen">
+  <div class="login-wrap">
+
+    <!-- Hero -->
+    <div class="login-hero">
+      <div class="login-logo-outer">
+        <div class="login-logo-circle">
+          <svg class="login-vmark" viewBox="0 0 60 60" fill="none">
+            <path d="M32 7C17.6 7 6 18 6 31.5c0 7.6 3.7 14.4 9.5 18.8V54l8.8-5.9c2.3.6 4.7.9 7.3.9 14.4 0 26-11 26-24.5S46.4 7 32 7z" fill="white" opacity="0.9"/>
+            <path d="M19 22l13 22 13-22" stroke="#e60000" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+        </div>
+      </div>
+      <div class="login-app-tag">
+        <div class="login-app-tag-dot"></div>
+        أنا فودافون
+      </div>
+      <div class="login-title-row">
+        <span class="login-letter" style="--i:0">T</span>
+        <span class="login-letter" style="--i:1">A</span>
+        <span class="login-letter" style="--i:2">L</span>
+        <span class="login-letter" style="--i:3">A</span>
+        <span class="login-letter" style="--i:4">S</span>
+        <span class="login-letter" style="--i:5">H</span>
+        <span class="login-letter" style="--i:6">N</span>
+        <span class="login-letter" style="--i:7">Y</span>
+      </div>
       <div class="login-sub">سجّل دخولك بحساب فودافون</div>
     </div>
+
+    <!-- Form -->
     <div id="errBox" class="err-box" style="display:none">
       <i class="fas fa-circle-exclamation"></i>
       <span id="errMsg"></span>
@@ -774,7 +973,7 @@ input[type="datetime-local"]{color-scheme:dark;}
         <i class="fas fa-right-to-bracket"></i>&nbsp; دخـول
       </button>
     </div>
-    <div class="sec-note"><i class="fas fa-shield-halved"></i> اتصال آمن ومشفر</div>
+    <div class="sec-note"><i class="fas fa-shield-halved"></i> اتصال آمن ومشفر بالكامل</div>
   </div>
 </div>
 
@@ -1107,7 +1306,24 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function showToast(msg,t=''){const el=_('toastEl');el.textContent=msg;el.className='toast show'+(t?' '+t:'');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2800);}
 document.addEventListener('contextmenu',e=>e.preventDefault());
 
-function goTo(id){document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id===id));if(id==='s-app')_(id).scrollTop=0;}
+function goTo(id){
+  document.querySelectorAll('.screen').forEach(s=>{
+    if(s.id==='s-splash') return; // splash managed separately
+    s.classList.toggle('active',s.id===id);
+  });
+  if(id==='s-app') _(id).scrollTop=0;
+}
+
+// ══ SPLASH ══
+function dismissSplash(nextScreen){
+  const splash = _('s-splash');
+  splash.classList.add('fade-out');
+  setTimeout(()=>{
+    splash.classList.remove('active','fade-out');
+    splash.style.display='none';
+    _(nextScreen).classList.add('active');
+  }, 600);
+}
 
 let pingInt=null;
 function startPing(){fetch('/ping');clearInterval(pingInt);pingInt=setInterval(()=>fetch('/ping'),15000);}
@@ -1341,14 +1557,27 @@ function confirmAutoSetup(){
 
 // ══ MAIN ══
 (async()=>{
+  // minimum splash display time
+  const splashPromise = new Promise(r=>setTimeout(r, 2200));
+  let loggedIn = false;
+  let loggedNumber = '';
+
   try{
     const r=await fetch('/check');const d=await r.json();
-    if(d.logged){
-      _('topNum').textContent=d.number;
-      loadAutoSettings();
-      goTo('s-app');startPing();startCycle();return;
-    }
+    if(d.logged){ loggedIn=true; loggedNumber=d.number; }
   }catch{}
+
+  // Wait for splash to finish showing
+  await splashPromise;
+
+  if(loggedIn){
+    _('topNum').textContent=loggedNumber;
+    loadAutoSettings();
+    dismissSplash('s-app');
+    startPing();startCycle();
+  } else {
+    dismissSplash('s-login');
+  }
 })();
 
 async function doLogin(){
@@ -1361,7 +1590,7 @@ async function doLogin(){
     const r=await fetch('/login',{method:'POST',body:fd});const d=await r.json();
     if(d.ok){
       _('topNum').textContent=d.number;
-      navigator.vibrate&&navigator.vibrate(30);
+      navigator.vibrate&&navigator.vibrate([30,20,30]);
       loadAutoSettings();
       goTo('s-app');startPing();startCycle();
     }
@@ -1371,7 +1600,13 @@ async function doLogin(){
 }
 _('inpPw')?.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 _('inpNum')?.addEventListener('keydown',e=>{if(e.key==='Enter')_('inpPw').focus();});
-_('logoutBtn').onclick=async()=>{await fetch('/logout');clearInterval(timerInt);stopPing();goTo('s-login');};
+_('logoutBtn').onclick=async()=>{
+  await fetch('/logout');
+  clearInterval(timerInt);stopPing();
+  autoCharged=false;
+  // Reset splash for re-entry if needed, just go to login
+  goTo('s-login');
+};
 
 function copySerial(btn){
   const s=btn.closest('.card-serial').querySelector('.serial-val').textContent.trim();
