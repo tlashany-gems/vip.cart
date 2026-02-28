@@ -360,76 +360,205 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 @keyframes livePulse{0%,100%{box-shadow:0 0 0 0 rgba(0,200,90,.5);}70%{box-shadow:0 0 0 5px rgba(0,200,90,0);}}
 
 /* ══════════════════════════════════
-   SPLASH SCREEN
+   SPLASH SCREEN — PREMIUM
 ══════════════════════════════════ */
-#s-splash{
-  background:#07070a;
-  z-index:9999;
-  overflow:hidden;
-}
+#s-splash{background:#060608;z-index:9999;overflow:hidden;}
 #s-splash.active{opacity:1;pointer-events:all;}
-#s-splash.fade-out{opacity:0;pointer-events:none;transition:opacity .6s ease;}
+#s-splash.fade-out{opacity:0;pointer-events:none;transition:opacity .8s cubic-bezier(.4,0,.2,1);}
 
-/* radial pulse rings */
-.splash-bg{position:absolute;inset:0;overflow:hidden;}
-.splash-ring{position:absolute;border-radius:50%;border:1px solid rgba(230,0,0,.1);top:50%;left:50%;transform:translate(-50%,-50%);}
-.splash-ring:nth-child(1){width:160px;height:160px;animation:sRing 3s ease-out infinite;}
-.splash-ring:nth-child(2){width:260px;height:260px;animation:sRing 3s ease-out .5s infinite;}
-.splash-ring:nth-child(3){width:380px;height:380px;animation:sRing 3s ease-out 1s infinite;}
-.splash-ring:nth-child(4){width:520px;height:520px;animation:sRing 3s ease-out 1.5s infinite;}
-@keyframes sRing{0%{opacity:.6;transform:translate(-50%,-50%) scale(.7);}100%{opacity:0;transform:translate(-50%,-50%) scale(1.15);}}
-
-.splash-center{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:0;}
-
-/* Main icon container */
-.splash-icon-wrap{position:relative;margin-bottom:32px;}
-.splash-icon-glow{position:absolute;inset:-30px;border-radius:50%;background:radial-gradient(circle,rgba(230,0,0,.22) 0%,transparent 70%);animation:glowPulse 2s ease-in-out infinite;}
-@keyframes glowPulse{0%,100%{transform:scale(.9);opacity:.6;}50%{transform:scale(1.1);opacity:1;}}
-
-/* The app icon itself */
-.splash-app-icon{width:100px;height:100px;border-radius:26px;position:relative;overflow:hidden;
-  background:linear-gradient(145deg,#b80000 0%,#e60000 45%,#ff3333 70%,#c40000 100%);
-  box-shadow:0 0 0 1.5px rgba(255,100,100,.2), 0 12px 40px rgba(230,0,0,.5), 0 4px 12px rgba(0,0,0,.7);
-  animation:iconIn .7s cubic-bezier(.34,1.4,.64,1) .2s both;
+/* --- background --- */
+.sp-bg-radial{
+  position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 100% 55% at 50% 0%, rgba(220,0,0,.22) 0%, transparent 60%),
+    radial-gradient(ellipse 70% 35% at 50% 100%, rgba(150,0,0,.1) 0%, transparent 55%);
 }
-@keyframes iconIn{from{opacity:0;transform:scale(.5) rotate(-8deg);}to{opacity:1;transform:scale(1) rotate(0);}}
-.splash-app-icon::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;background:linear-gradient(180deg,rgba(255,255,255,.18) 0%,transparent 100%);border-radius:26px 26px 0 0;}
+/* subtle dot grid */
+.sp-dots{
+  position:absolute;inset:0;
+  background-image:radial-gradient(circle, rgba(255,255,255,.07) 1px, transparent 1px);
+  background-size:28px 28px;
+  -webkit-mask-image:radial-gradient(ellipse 65% 65% at 50% 50%, black 20%, transparent 80%);
+  mask-image:radial-gradient(ellipse 65% 65% at 50% 50%, black 20%, transparent 80%);
+}
 
-/* SVG mark inside icon */
-.splash-vf-svg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+/* --- center stage --- */
+.sp-stage{
+  position:relative;z-index:2;
+  display:flex;flex-direction:column;align-items:center;
+  gap:0;
+}
 
-/* Notification badge */
-.splash-badge{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--g3),var(--g2));border:2px solid var(--bg);display:flex;align-items:center;justify-content:center;animation:badgeIn .5s cubic-bezier(.34,1.6,.64,1) .9s both;}
-@keyframes badgeIn{from{opacity:0;transform:scale(0);}to{opacity:1;transform:scale(1);}}
-.splash-badge i{font-size:.5rem;color:#1a0e00;}
+/* --- THE LOGO --- */
+.sp-logo-wrap{
+  position:relative;
+  margin-bottom:36px;
+}
+/* pulsing halo behind icon */
+.sp-halo{
+  position:absolute;
+  inset:-22px;
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(220,0,0,.28) 0%, rgba(200,0,0,.08) 45%, transparent 70%);
+  animation:haloPulse 2.4s ease-in-out infinite;
+}
+@keyframes haloPulse{
+  0%,100%{transform:scale(.92);opacity:.7;}
+  50%{transform:scale(1.08);opacity:1;}
+}
+/* second outer halo - slower */
+.sp-halo2{
+  position:absolute;
+  inset:-42px;
+  border-radius:50%;
+  background:radial-gradient(circle, rgba(220,0,0,.1) 0%, transparent 65%);
+  animation:haloPulse 2.4s ease-in-out .8s infinite;
+}
 
-/* App name */
-.splash-app-name{font-family:'Cairo',sans-serif;font-size:1rem;font-weight:900;color:rgba(255,255,255,.9);letter-spacing:3px;animation:fadeUp .6s ease .5s both;}
-@keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+/* spinning conic ring */
+.sp-spin-ring{
+  position:absolute;
+  inset:-10px;
+  border-radius:50%;
+  animation:spinRing 4s linear infinite;
+  background:conic-gradient(
+    from 0deg,
+    rgba(220,0,0,0) 0deg,
+    rgba(220,0,0,.9) 60deg,
+    rgba(200,168,75,.7) 120deg,
+    rgba(220,0,0,.9) 180deg,
+    rgba(220,0,0,0) 240deg,
+    rgba(220,0,0,0) 360deg
+  );
+  -webkit-mask:radial-gradient(farthest-side, transparent calc(100% - 1.5px), black calc(100% - 1.5px));
+  mask:radial-gradient(farthest-side, transparent calc(100% - 1.5px), black calc(100% - 1.5px));
+}
+@keyframes spinRing{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
 
-/* TALASHNY title */
-.splash-title-wrap{display:flex;align-items:center;gap:0;margin-top:6px;animation:fadeUp .6s ease .65s both;}
-.splash-letter{font-family:'Playfair Display',serif;font-size:2rem;font-weight:900;color:transparent;
-  background:linear-gradient(90deg,#888 0%,#fff 30%,#ddd 50%,#fff 70%,#777 100%);
-  background-size:300% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  animation:chromeLetters 4s linear infinite,letterIn .5s cubic-bezier(.34,1.5,.64,1) both;
-  animation-delay:calc(.7s + var(--li)*.08s), calc(.7s + var(--li)*.08s);}
-@keyframes chromeLetters{0%{background-position:300% center}100%{background-position:-300% center}}
-@keyframes letterIn{from{opacity:0;transform:translateY(20px) scale(.6);}to{opacity:1;transform:none;}}
+/* the icon itself */
+.sp-icon{
+  position:relative;
+  width:118px;height:118px;
+  border-radius:34px;
+  background:linear-gradient(145deg, #9a0000 0%, #d40000 35%, #f00000 60%, #b80000 100%);
+  box-shadow:
+    0 0 0 1px rgba(255,80,80,.12),
+    0 18px 50px rgba(200,0,0,.55),
+    0 6px 18px rgba(0,0,0,.9);
+  display:flex;align-items:center;justify-content:center;
+  overflow:hidden;
+  animation:iconDrop .9s cubic-bezier(.34,1.45,.64,1) .15s both;
+}
+@keyframes iconDrop{
+  from{opacity:0;transform:scale(.25) rotate(-20deg) translateY(-30px);}
+  to{opacity:1;transform:scale(1) rotate(0deg) translateY(0);}
+}
+/* glass sheen */
+.sp-icon::before{
+  content:'';position:absolute;
+  top:0;left:0;right:0;height:52%;
+  background:linear-gradient(180deg,rgba(255,255,255,.2) 0%,transparent 100%);
+  border-radius:34px 34px 0 0;
+  pointer-events:none;
+}
+.sp-icon-inner{position:relative;z-index:1;}
 
-.splash-tagline{font-size:.6rem;font-weight:700;color:var(--ink3);letter-spacing:2px;margin-top:12px;animation:fadeUp .6s ease 1.3s both;}
+/* gold bolt badge */
+.sp-bolt{
+  position:absolute;
+  bottom:-8px;right:-8px;
+  width:32px;height:32px;
+  border-radius:50%;
+  background:linear-gradient(135deg,#7a5c18,#f0cd60,#b8921e);
+  border:3px solid #060608;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 14px rgba(200,168,75,.6);
+  animation:boltIn .6s cubic-bezier(.34,1.8,.64,1) 1.1s both;
+}
+@keyframes boltIn{from{opacity:0;transform:scale(0) rotate(-60deg);}to{opacity:1;transform:scale(1) rotate(0);}}
+.sp-bolt i{font-size:.62rem;color:#1a0e00;}
 
-/* Progress bar at bottom */
-.splash-progress-wrap{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);width:120px;}
-.splash-progress-track{height:2px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;}
-.splash-progress-fill{height:100%;background:linear-gradient(90deg,var(--red),var(--g1));border-radius:2px;width:0%;animation:splashLoad 1.8s cubic-bezier(.4,0,.2,1) .4s forwards;}
-@keyframes splashLoad{0%{width:0%;}60%{width:70%;}80%{width:85%;}100%{width:100%;}}
-.splash-version{text-align:center;font-size:.48rem;color:var(--ink3);margin-top:8px;letter-spacing:1px;animation:fadeUp .4s ease 1.8s both;}
+/* --- text --- */
+.sp-label{
+  font-family:'Cairo',sans-serif;
+  font-size:.52rem;font-weight:800;
+  letter-spacing:4px;text-transform:uppercase;
+  color:rgba(255,255,255,.28);
+  margin-bottom:12px;
+  animation:textIn .5s ease 1s both;
+}
+.sp-name{
+  display:flex;align-items:baseline;gap:0;
+  margin-bottom:8px;
+  animation:textIn .6s ease .8s both;
+}
+.sp-nl{
+  font-family:'Playfair Display',serif;
+  font-size:3rem;font-weight:900;
+  line-height:.95;
+  color:transparent;
+  background:linear-gradient(
+    160deg,
+    #888 0%, #bbb 15%, #fff 30%,
+    #e0e0e0 45%, #fff 60%,
+    #aaa 75%, #ccc 90%, #888 100%
+  );
+  background-size:300% 100%;
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  animation:steelFlow 6s linear infinite, nlIn .5s cubic-bezier(.34,1.5,.64,1) both;
+  animation-delay: steelFlow 0s, nlIn calc(.75s + var(--n)*.07s);
+}
+@keyframes steelFlow{0%{background-position:200% center}100%{background-position:-200% center}}
+@keyframes nlIn{from{opacity:0;transform:translateY(28px) scaleY(.4);}to{opacity:1;transform:none;}}
+@keyframes textIn{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
 
-/* Vodafone brand strip at very bottom */
-.splash-vf-strip{position:absolute;bottom:20px;display:flex;align-items:center;gap:7px;animation:fadeUp .5s ease 1.6s both;}
-.splash-vf-dot{width:8px;height:8px;border-radius:50%;background:var(--red);}
-.splash-vf-text{font-size:.52rem;font-weight:700;color:var(--ink3);letter-spacing:1.5px;}
+.sp-sub{
+  font-size:.58rem;font-weight:700;
+  color:rgba(255,255,255,.2);
+  letter-spacing:2px;
+  animation:textIn .5s ease 1.4s both;
+}
+.sp-sub span{color:rgba(220,0,0,.55);}
+
+/* --- bottom loader --- */
+.sp-foot{
+  position:absolute;
+  bottom:0;left:0;right:0;
+  padding:0 28px 40px;
+  z-index:2;
+}
+.sp-bar-track{
+  height:2px;
+  background:rgba(255,255,255,.06);
+  border-radius:2px;overflow:hidden;
+  margin-bottom:16px;
+}
+.sp-bar-fill{
+  height:100%;
+  background:linear-gradient(90deg, #d40000, #c8a84b, #d40000);
+  background-size:200%;
+  animation:barGrow 2.2s cubic-bezier(.25,.46,.45,.94) .4s forwards,
+             barShine 1s linear .4s infinite;
+  width:0;
+}
+@keyframes barGrow{
+  0%{width:0%;}
+  30%{width:40%;}
+  65%{width:75%;}
+  85%{width:90%;}
+  100%{width:100%;}
+}
+@keyframes barShine{0%{background-position:200%}100%{background-position:-200%}}
+
+.sp-meta{
+  display:flex;align-items:center;justify-content:space-between;
+  animation:textIn .4s ease 2s both;
+}
+.sp-ver{font-size:.44rem;font-weight:700;color:rgba(255,255,255,.18);letter-spacing:1px;}
+.sp-brand{display:flex;align-items:center;gap:5px;}
+.sp-brand-dot{width:5px;height:5px;border-radius:50%;background:rgba(220,0,0,.5);}
+.sp-brand-txt{font-size:.43rem;font-weight:800;letter-spacing:1.5px;color:rgba(255,255,255,.18);}
 
 /* ══════════════════════════════════
    LOGIN SCREEN
@@ -865,57 +994,67 @@ input[type="datetime-local"]{color-scheme:dark;}
 <body>
 
 <!-- ══ SPLASH SCREEN ══ -->
+<!-- ══ SPLASH SCREEN ══ -->
 <div id="s-splash" class="screen active">
-  <div class="splash-bg">
-    <div class="splash-ring"></div>
-    <div class="splash-ring"></div>
-    <div class="splash-ring"></div>
-    <div class="splash-ring"></div>
-  </div>
-  <div class="splash-center">
-    <div class="splash-icon-wrap">
-      <div class="splash-icon-glow"></div>
-      <div class="splash-app-icon">
-        <div class="splash-vf-svg">
-          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-            <!-- speech bubble shape -->
-            <path d="M32 6C16.5 6 4 17.2 4 31c0 8.1 4.2 15.3 10.7 19.9V54l9.3-6.3C26.4 48.2 29.1 48.6 32 48.6c15.5 0 28-11.2 28-25.3S47.5 6 32 6z" fill="white" opacity="0.93"/>
-            <!-- V mark -->
-            <path d="M20 19 L32 41 L44 19" stroke="#e60000" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- bg -->
+  <div class="sp-bg-radial"></div>
+  <div class="sp-dots"></div>
+
+  <!-- center -->
+  <div class="sp-stage">
+
+    <!-- logo -->
+    <div class="sp-logo-wrap">
+      <div class="sp-halo2"></div>
+      <div class="sp-halo"></div>
+      <div class="sp-spin-ring"></div>
+      <div class="sp-icon">
+        <div class="sp-icon-inner">
+          <svg width="70" height="70" viewBox="0 0 70 70" fill="none">
+            <path d="M35 6C18.4 6 5 18.6 5 34.2c0 8.8 4.4 16.6 11.3 21.5V64l10.4-7c2.8.7 5.7 1.1 8.7 1.1C52.6 58.2 65 46 65 34.2S52.6 6 35 6z" fill="white" opacity="0.93"/>
+            <path d="M22 24L35 47L48 24" stroke="#d40000" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
           </svg>
         </div>
       </div>
-      <div class="splash-badge"><i class="fas fa-bolt"></i></div>
+      <div class="sp-bolt"><i class="fas fa-bolt"></i></div>
     </div>
 
-    <div class="splash-app-name">أنا فودافون</div>
+    <!-- text -->
+    <div class="sp-label">أنا فودافون</div>
 
-    <div class="splash-title-wrap">
-      <span class="splash-letter" style="--li:0">T</span>
-      <span class="splash-letter" style="--li:1">A</span>
-      <span class="splash-letter" style="--li:2">L</span>
-      <span class="splash-letter" style="--li:3">A</span>
-      <span class="splash-letter" style="--li:4">S</span>
-      <span class="splash-letter" style="--li:5">H</span>
-      <span class="splash-letter" style="--li:6">N</span>
-      <span class="splash-letter" style="--li:7">Y</span>
+    <div class="sp-name">
+      <span class="sp-nl" style="--n:0">T</span>
+      <span class="sp-nl" style="--n:1">A</span>
+      <span class="sp-nl" style="--n:2">L</span>
+      <span class="sp-nl" style="--n:3">A</span>
+      <span class="sp-nl" style="--n:4">S</span>
+      <span class="sp-nl" style="--n:5">H</span>
+      <span class="sp-nl" style="--n:6">N</span>
+      <span class="sp-nl" style="--n:7">Y</span>
     </div>
-    <div class="splash-tagline">كروت رمضان — شحن تلقائي</div>
+
+    <div class="sp-sub">كروت رمضان &nbsp;<span>·</span>&nbsp; شحن تلقائي</div>
+
   </div>
 
-  <div class="splash-progress-wrap">
-    <div class="splash-progress-track">
-      <div class="splash-progress-fill"></div>
+  <!-- bottom -->
+  <div class="sp-foot">
+    <div class="sp-bar-track">
+      <div class="sp-bar-fill"></div>
     </div>
-    <div class="splash-version">v2.0 · فودافون مصر</div>
+    <div class="sp-meta">
+      <div class="sp-ver">v2.1 · Vodafone EG</div>
+      <div class="sp-brand">
+        <div class="sp-brand-dot"></div>
+        <div class="sp-brand-txt">TALASHNY</div>
+        <div class="sp-brand-dot"></div>
+      </div>
+    </div>
   </div>
 
-  <div class="splash-vf-strip">
-    <div class="splash-vf-dot"></div>
-    <div class="splash-vf-text">POWERED BY VODAFONE EG</div>
-    <div class="splash-vf-dot"></div>
-  </div>
 </div>
+
 
 <!-- ══ LOGIN ══ -->
 <div id="s-login" class="screen">
@@ -1072,22 +1211,13 @@ input[type="datetime-local"]{color-scheme:dark;}
           <div class="modal-head-icon"><i class="fas fa-bolt"></i></div>
           <div>
             <div class="modal-head-title">إعداد الشحن التلقائي</div>
-            <div class="modal-head-sub">اختار الفئة وطريقة الشحن</div>
+            <div class="modal-head-sub">حدد الوحدات وطريقة الشحن</div>
           </div>
         </div>
         <div class="modal-close" onclick="closeAutoSetup()"><i class="fas fa-xmark"></i></div>
       </div>
     </div>
     <div class="modal-body">
-
-      <!-- AMOUNT SECTION -->
-      <div class="section-label">الفئة المطلوبة</div>
-      <div class="amount-grid" id="amountGrid">
-        <!-- Filled by JS -->
-        <div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--ink3);font-size:.65rem">
-          <i class="fas fa-spinner fa-spin" style="color:var(--red)"></i>&nbsp;جاري تحميل الكروت...
-        </div>
-      </div>
 
       <!-- UNITS SECTION -->
       <div class="section-label">عدد الوحدات المطلوبة</div>
@@ -1332,9 +1462,8 @@ function stopPing(){clearInterval(pingInt);}
 // ══ AUTO-CHARGE SETTINGS ══
 let autoSettings = {
   enabled: false,
-  amount: null,   // null = أي فئة / number = فئة محددة / 0 = أعلى فئة
   method: 'online', // 'online' | 'ussd'
-  minUnits: 500   // 0 = أي عدد
+  minUnits: 500     // 0 = أي عدد
 };
 let autoCharged = false;
 let lastPromosList = [];
@@ -1343,7 +1472,6 @@ function loadAutoSettings(){
   try{
     const s = JSON.parse(localStorage.getItem('autoSettings')||'{}');
     if(s.method) autoSettings.method = s.method;
-    if(s.amount !== undefined) autoSettings.amount = s.amount;
     if(s.enabled !== undefined) autoSettings.enabled = s.enabled;
     if(s.minUnits !== undefined) autoSettings.minUnits = s.minUnits;
   }catch{}
@@ -1357,48 +1485,32 @@ function saveAutoSettings(){
 
 function onAutoToggleChange(){
   const checked = _('autoToggle').checked;
-  if(checked && autoSettings.amount === null){
-    // First time: show setup
-    _('autoToggle').checked = false;
-    openAutoSetup();
-    return;
-  }
   autoSettings.enabled = checked;
   saveAutoSettings();
   updateAutoPrefDisplay();
-  if(checked) showToast('✅ الشحن التلقائي مفعّل','ok');
-  else{showToast('⛔ الشحن التلقائي معطّل','');autoCharged=false;}
+  if(checked){ showToast('✅ الشحن التلقائي مفعّل','ok'); autoCharged=false; }
+  else{ showToast('⛔ الشحن التلقائي معطّل',''); autoCharged=false; }
 }
 
 function updateAutoPrefDisplay(){
   const el = _('autoPrefDisplay');
   if(!el) return;
-  if(autoSettings.amount === null){
-    el.innerHTML = '<i class="fas fa-circle-dot" style="font-size:.4rem"></i><span>اضغط ضبط للتخصيص</span>';
-    return;
-  }
-  const amtLabel = autoSettings.amount === 0 ? 'أعلى فئة' : autoSettings.amount + ' جنيه';
   const methLabel = autoSettings.method === 'online' ? 'أونلاين' : 'بالهاتف';
-  const unitsLabel = autoSettings.minUnits > 0 ? ' · ' + autoSettings.minUnits + '+ وحدة' : '';
-  el.innerHTML = `<i class="fas fa-bolt" style="font-size:.4rem;color:var(--red)"></i><span>${amtLabel} — ${methLabel}${unitsLabel}</span>`;
+  const unitsLabel = autoSettings.minUnits > 0 ? autoSettings.minUnits + '+ وحدة' : 'أي وحدات';
+  el.innerHTML = `<i class="fas fa-bolt" style="font-size:.4rem;color:var(--red)"></i><span>${unitsLabel} — ${methLabel}</span>`;
 }
 
 // ══ MODAL ══
-let selectedAutoAmount = null;
 let selectedAutoMethod = 'online';
 let selectedMinUnits = 500;
 
 function openAutoSetup(){
-  selectedAutoAmount = autoSettings.amount;
   selectedAutoMethod = autoSettings.method || 'online';
   selectedMinUnits   = autoSettings.minUnits !== undefined ? autoSettings.minUnits : 500;
   _('autoSetupModal').classList.add('open');
-  renderAmountGrid(lastPromosList);
   selectMethod(selectedAutoMethod);
-  // Init units UI
   setUnitsUI(selectedMinUnits);
   updateSetupSummary();
-  updateConfirmBtn();
 }
 
 function closeAutoSetup(){
@@ -1445,70 +1557,6 @@ _('autoSetupModal').addEventListener('click', function(e){
   if(e.target === this) closeAutoSetup();
 });
 
-function renderAmountGrid(promos){
-  const grid = _('amountGrid');
-  if(!promos || !promos.length){
-    grid.innerHTML = `
-      <div style="grid-column:1/-1;background:var(--l2);border:1px solid var(--stroke);border-radius:12px;padding:16px;text-align:center">
-        <i class="fas fa-inbox" style="color:var(--ink3);font-size:1.2rem;display:block;margin-bottom:8px"></i>
-        <div style="font-size:.65rem;color:var(--ink2)">لا توجد كروت الآن</div>
-        <div style="font-size:.55rem;color:var(--ink3);margin-top:4px">اختار فئة وسيتم الشحن فور ظهور الكروت</div>
-      </div>
-      <div class="amount-tile ${selectedAutoAmount===0?'selected best-tile':''}" onclick="selectAmount(0)">
-        <div class="tile-badge">AUTO</div>
-        <div class="tile-num" style="font-size:1.1rem">أعلى</div>
-        <div class="tile-cur">فئة</div>
-        <div class="tile-gift"><i class="fas fa-star"></i>&nbsp;الأفضل دايما</div>
-        <div class="tile-check"><i class="fas fa-check"></i></div>
-      </div>`;
-    return;
-  }
-  const bestAmt = Math.max(...promos.map(p=>p.amount));
-  // Add "أعلى فئة" option + individual amounts
-  const uniqueAmounts = [...new Set(promos.map(p=>p.amount))].sort((a,b)=>b-a);
-  let html = `
-    <div class="amount-tile best-tile ${selectedAutoAmount===0?'selected':''}" onclick="selectAmount(0)" style="grid-column:1/-1">
-      <div class="tile-badge">تلقائي</div>
-      <div style="display:flex;align-items:center;justify-content:center;gap:8px">
-        <div class="tile-num" style="font-size:1.3rem">${bestAmt}</div>
-        <div style="text-align:right">
-          <div class="tile-cur">جنيه الآن</div>
-          <div style="font-size:.48rem;color:var(--ink3);margin-top:2px">أعلى فئة متاحة دايماً</div>
-        </div>
-      </div>
-      <div class="tile-gift" style="margin-top:8px"><i class="fas fa-star"></i>&nbsp;يختار أعلى فئة تلقائياً</div>
-      <div class="tile-check"><i class="fas fa-check"></i></div>
-    </div>`;
-  uniqueAmounts.forEach(amt=>{
-    const card = promos.find(p=>p.amount===amt);
-    const isBest = amt===bestAmt;
-    html += `
-      <div class="amount-tile ${isBest?'best-tile':''} ${selectedAutoAmount===amt?'selected':''}" onclick="selectAmount(${amt})">
-        ${isBest?'<div class="tile-badge">أفضل</div>':''}
-        <div class="tile-num">${amt}</div>
-        <div class="tile-cur">جنيه</div>
-        <div class="tile-gift"><i class="fas fa-gift"></i>&nbsp;${card?card.gift:0} وحدة</div>
-        <div class="tile-check"><i class="fas fa-check"></i></div>
-      </div>`;
-  });
-  grid.innerHTML = html;
-}
-
-function selectAmount(amt){
-  selectedAutoAmount = amt;
-  // Update UI
-  document.querySelectorAll('.amount-tile').forEach(t=>{
-    t.classList.remove('selected');
-  });
-  // Find correct tile and select
-  document.querySelectorAll('.amount-tile').forEach(t=>{
-    const click = t.getAttribute('onclick');
-    if(click && click.includes(`selectAmount(${amt})`)) t.classList.add('selected');
-  });
-  updateSetupSummary();
-  updateConfirmBtn();
-}
-
 function selectMethod(method){
   selectedAutoMethod = method;
   _('method-online').classList.toggle('selected', method==='online');
@@ -1518,31 +1566,20 @@ function selectMethod(method){
 
 function updateSetupSummary(){
   const box = _('setupSummary');
-  if(selectedAutoAmount === null){
-    box.innerHTML = `
-      <div class="sum-icon"><i class="fas fa-circle-info"></i></div>
-      <div class="sum-text"><div class="sum-empty">اختار فئة وطريقة شحن لتفعيل الشحن التلقائي</div></div>`;
-    return;
-  }
-  const amtLabel = selectedAutoAmount === 0 ? '<span>أعلى فئة متاحة</span>' : `<span>${selectedAutoAmount} جنيه</span>`;
   const methIcon = selectedAutoMethod==='online' ? 'fa-bolt' : 'fa-phone';
   const methLabel = selectedAutoMethod==='online' ? 'شحن أونلاين مباشر' : 'شحن عبر USSD بالهاتف';
-  const unitsLabel = selectedMinUnits > 0 ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:.5rem;font-weight:700;color:var(--g2);background:rgba(200,168,75,.07);border:1px solid rgba(200,168,75,.15);padding:2px 8px;border-radius:100px"><i class="fas fa-layer-group"></i>&nbsp;${selectedMinUnits}+ وحدة</span>` : `<span style="display:inline-flex;align-items:center;gap:3px;margin-top:4px;font-size:.5rem;font-weight:700;color:var(--ink3);background:rgba(255,255,255,.04);padding:2px 8px;border-radius:100px"><i class="fas fa-infinity"></i>&nbsp;أي عدد وحدات</span>`;
+  const unitsChip = selectedMinUnits > 0
+    ? `<span style="display:inline-flex;align-items:center;gap:3px;margin-top:5px;font-size:.5rem;font-weight:700;color:var(--g2);background:rgba(200,168,75,.07);border:1px solid rgba(200,168,75,.15);padding:2px 9px;border-radius:100px"><i class="fas fa-layer-group"></i>&nbsp;${selectedMinUnits}+ وحدة كحد أدنى</span>`
+    : `<span style="display:inline-flex;align-items:center;gap:3px;margin-top:5px;font-size:.5rem;font-weight:700;color:var(--ink3);background:rgba(255,255,255,.04);padding:2px 9px;border-radius:100px"><i class="fas fa-infinity"></i>&nbsp;أي عدد وحدات</span>`;
   box.innerHTML = `
     <div class="sum-icon" style="color:var(--green);background:rgba(0,200,90,.08);border-color:rgba(0,200,90,.2)"><i class="fas fa-check-double"></i></div>
     <div class="sum-text">
-      <div class="sum-main">سيشحن بفئة ${amtLabel} تلقائياً</div>
-      <div class="sum-sub"><i class="fas ${methIcon}" style="margin-left:3px"></i>${methLabel}</div>
-      <div>${unitsLabel}</div>
+      <div class="sum-main"><i class="fas ${methIcon}" style="margin-left:4px;color:var(--red)"></i>${methLabel}</div>
+      <div>${unitsChip}</div>
     </div>`;
 }
 
-function updateConfirmBtn(){
-  _('btnConfirmAuto').disabled = selectedAutoAmount === null;
-}
-
 function confirmAutoSetup(){
-  autoSettings.amount   = selectedAutoAmount;
   autoSettings.method   = selectedAutoMethod;
   autoSettings.minUnits = selectedMinUnits;
   autoSettings.enabled  = true;
@@ -1551,7 +1588,6 @@ function confirmAutoSetup(){
   updateAutoPrefDisplay();
   closeAutoSetup();
   autoCharged = false;
-  const unitsInfo = selectedMinUnits > 0 ? ` · ${selectedMinUnits}+ وحدة` : '';
   showToast('✅ تم ضبط الشحن التلقائي وتفعيله','ok');
 }
 
@@ -1636,21 +1672,14 @@ function renderCards(list,online){
   cnt.textContent=list.length+' كرت';_('st-total').textContent=list.length;
   const bestAmt=Math.max(...list.map(c=>c.amount));_('st-max').textContent=bestAmt+' ج';
 
-  // Determine auto-charge target (filtered by minUnits)
+  // Determine auto-charge target: highest amount card that meets minUnits
   let autoTarget = null;
   if(autoSettings.enabled && !autoCharged){
     const minU = autoSettings.minUnits || 0;
-    // Filter cards that meet the minimum units requirement
     const eligible = minU > 0 ? list.filter(p => p.gift >= minU) : list;
     if(eligible.length > 0){
-      if(autoSettings.amount === 0){
-        // Highest amount from eligible
-        const bestEligible = Math.max(...eligible.map(p=>p.amount));
-        autoTarget = eligible.find(p=>p.amount===bestEligible);
-      } else if(autoSettings.amount){
-        autoTarget = eligible.find(p=>p.amount===autoSettings.amount);
-        if(!autoTarget) autoTarget = eligible.find(p=>p.amount===Math.max(...eligible.map(p=>p.amount)));
-      }
+      const bestEligibleAmt = Math.max(...eligible.map(p=>p.amount));
+      autoTarget = eligible.find(p=>p.amount===bestEligibleAmt);
     }
   }
 
