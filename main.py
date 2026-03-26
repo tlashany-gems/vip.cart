@@ -180,13 +180,16 @@ def scheduler_loop():
 
 threading.Thread(target=scheduler_loop, daemon=True).start()
 
+# ─── REAL ONLINE TRACKER ───────────────────────────────────────────
+# كل مستخدم بيبعت ping كل 20 ثانية، السيرفر بيشيل اللي مبعتش في 35 ثانية
 online_users = {}
 online_lock  = threading.Lock()
-PING_TIMEOUT = 30
+PING_TIMEOUT = 35   # ثوان — لو مبعتش ping اعتبره اوفلاين
 
-def update_online(sid):
+def ping_user(uid):
+    """تحديث وقت آخر ping للمستخدم"""
     with online_lock:
-        online_users[sid] = time.time()
+        online_users[uid] = time.time()
 
 def cleanup_online():
     while True:
@@ -194,13 +197,15 @@ def cleanup_online():
         now = time.time()
         with online_lock:
             dead = [k for k,v in online_users.items() if now - v > PING_TIMEOUT]
-            for k in dead: del online_users[k]
+            for k in dead:
+                del online_users[k]
 
 threading.Thread(target=cleanup_online, daemon=True).start()
 
 def get_online_count():
     with online_lock:
         return len(online_users)
+# ──────────────────────────────────────────────────────────────────
 
 PAGE = r"""<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -282,7 +287,26 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 .banner-letters span{display:inline-block;color:transparent;background:linear-gradient(90deg,#7a5c18 0%,#c8a84b 20%,#f5d070 40%,#e8c060 60%,#f5d070 75%,#8a6820 100%);background-size:400% 100%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:goldFlow 4s linear infinite;animation-delay:calc(var(--i)*.18s);}
 .banner-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px;}
 .banner-season{font-size:.62rem;font-weight:800;color:var(--gold2);}
-.banner-tag{font-size:.52rem;font-weight:700;color:var(--ink3);letter-spacing:1px;}
+.banner-tag{font-size:.52rem;font-weight:700;color:var(--ink3);letter-spacing:1px;display:flex;align-items:center;gap:5px;}
+
+/* ONLINE INLINE — جوه الـ ended-card */
+.online-inline{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  font-size:.7rem;font-weight:800;color:#00e676;
+  margin-top:2px;
+}
+.online-inline-dot{
+  width:7px;height:7px;border-radius:50%;
+  background:#00C853;
+  box-shadow:0 0 0 0 rgba(0,200,83,.6);
+  animation:onlinePulse 1.8s infinite;
+  flex-shrink:0;
+}
+@keyframes onlinePulse{
+  0%{box-shadow:0 0 0 0 rgba(0,200,83,.6)}
+  70%{box-shadow:0 0 0 7px rgba(0,200,83,0)}
+  100%{box-shadow:0 0 0 0 rgba(0,200,83,0)}
+}
 
 /* PAGE */
 .page-wrap{max-width:480px;margin:0 auto;padding:20px 14px 100px;}
@@ -429,10 +453,16 @@ input[type="datetime-local"]{color-scheme:dark;}
 .admin-btns{display:flex;gap:8px;margin-top:4px;}
 .btn-send-notif{flex:1;padding:13px;border:none;border-radius:var(--r-sm);background:linear-gradient(135deg,var(--gold3),var(--gold1),var(--gold2));color:#1a0e00;font-family:'Cairo',sans-serif;font-size:.78rem;font-weight:800;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:6px;}
 .btn-clear-notif{padding:13px 16px;border-radius:var(--r-sm);background:var(--l2);border:1px solid var(--stroke);color:var(--ink3);cursor:pointer;transition:all .2s;font-family:'Cairo',sans-serif;font-size:.7rem;font-weight:700;}
+
+/* ADMIN STATS — عداد أكبر وأوضح */
 .admin-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--stroke);}
-.adm-stat{background:var(--l2);border:1px solid var(--stroke);border-radius:10px;padding:10px 12px;text-align:center;}
+.adm-stat{background:var(--l2);border:1px solid var(--stroke);border-radius:10px;padding:10px 12px;text-align:center;position:relative;overflow:hidden;}
+.adm-stat.online-stat{border-color:rgba(0,200,83,.25);background:rgba(0,200,83,.04);}
 .adm-stat-val{font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:900;color:var(--gold2);}
+.adm-stat.online-stat .adm-stat-val{color:#00C853;}
 .adm-stat-lbl{font-size:.5rem;color:var(--ink3);margin-top:3px;}
+.adm-online-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#00C853;margin-left:3px;vertical-align:middle;animation:onlinePulse 2s infinite;}
+
 .notif-preview{background:var(--l2);border:1px solid var(--stroke);border-radius:10px;padding:11px 13px;display:flex;align-items:flex-start;gap:9px;border-right:3px solid var(--gold1);}
 .notif-preview.type-ok{border-right-color:var(--green);}
 .notif-preview.type-err{border-right-color:#ff5555;}
@@ -460,7 +490,7 @@ input[type="datetime-local"]{color-scheme:dark;}
 .sched-item-text{font-size:.58rem;color:var(--ink2);line-height:1.4;}
 .sched-time-badge{display:inline-flex;align-items:center;gap:4px;font-size:.5rem;font-weight:700;margin-top:5px;padding:2px 8px;border-radius:100px;background:rgba(200,168,75,.07);color:var(--gold2);}
 .sched-time-badge.done-badge{background:rgba(0,200,90,.07);color:var(--green);}
-.sched-del{width:26px;height:26px;border-radius:7px;flex-shrink:0;background:rgba(255,85,85,.07);border:1px solid rgba(255,85,85,.15);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#ff5555;font-size:.58rem;}
+.sched-del{width:26px;height:26px;border-radius:7px;flex-shrink:0;background:rgba(255,85,85,.07);border:1px solid rgba(255,85,85,.15);display:flex;align-items:center;justify-content:pointer;cursor:pointer;color:#ff5555;font-size:.58rem;align-items:center;justify-content:center;}
 .hist-empty{text-align:center;padding:24px;color:var(--ink3);font-size:.65rem;}
 .input-box{display:flex;align-items:center;background:var(--l2);border:1.5px solid var(--stroke);border-radius:var(--r-sm);overflow:hidden;transition:border-color .25s;}
 .input-box:focus-within{border-color:rgba(200,168,75,.35);}
@@ -518,7 +548,7 @@ input[type="datetime-local"]{color-scheme:dark;}
   <div class="sp-foot">
     <div class="sp-bar-track"><div class="sp-bar-fill"></div></div>
     <div class="sp-meta">
-      <div class="sp-ver">v2.1 · Vodafone EG</div>
+      <div class="sp-ver">v2.2 · Vodafone EG</div>
       <div class="sp-brand">
         <div class="sp-brand-dot"></div>
         <div class="sp-brand-txt">TALASHNY</div>
@@ -545,8 +575,9 @@ input[type="datetime-local"]{color-scheme:dark;}
     <div class="banner-right">
       <div class="banner-season">رمضان 2026</div>
       <div class="banner-tag">
-        <div class="live-dot" id="liveDotBtn" onclick="handleLiveTap()" style="display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--green);animation:livePulse 2s infinite;cursor:pointer;vertical-align:middle;margin-left:4px"></div>
-        قريباً إن شاء الله
+        <div class="live-dot" id="liveDotBtn" onclick="handleLiveTap()"
+             style="width:6px;height:6px;border-radius:50%;background:var(--green);animation:livePulse 2s infinite;cursor:pointer;flex-shrink:0;"></div>
+        <span>قريباً إن شاء الله</span>
       </div>
     </div>
   </div>
@@ -561,6 +592,11 @@ input[type="datetime-local"]{color-scheme:dark;}
       <div class="ended-note">
         خدمة <b>شحن كروت رمضان فودافون</b> متاحة بس خلال شهر رمضان المبارك.<br>
         هنعود بشكل أقوى في <b>رمضان القادم 2026</b> إن شاء الله.
+      </div>
+      <div class="ended-line"></div>
+      <div class="online-inline">
+        <div class="online-inline-dot"></div>
+        <span id="onlineCount">...</span>&nbsp;<span id="onlineLabel">متصل دلوقتي</span>
       </div>
     </div>
 
@@ -677,10 +713,23 @@ input[type="datetime-local"]{color-scheme:dark;}
         <div class="admin-tab" id="tab-history" onclick="switchTab('history')"><i class="fas fa-clock-rotate-left"></i>&nbsp;السجل</div>
       </div>
       <div class="admin-tab-body" id="tabSend">
+        <!-- إحصائيات مع عداد متصلين بارز -->
         <div class="admin-stats">
-          <div class="adm-stat"><div class="adm-stat-val" id="adm-online">—</div><div class="adm-stat-lbl">متصل الآن</div></div>
-          <div class="adm-stat"><div class="adm-stat-val" id="adm-today">—</div><div class="adm-stat-lbl">زيارات اليوم</div></div>
-          <div class="adm-stat"><div class="adm-stat-val" id="adm-views" style="color:var(--gold2)">—</div><div class="adm-stat-lbl">شافوا الإشعار</div></div>
+          <div class="adm-stat online-stat">
+            <div class="adm-stat-val">
+              <span id="adm-online">—</span>
+              <div class="adm-online-dot"></div>
+            </div>
+            <div class="adm-stat-lbl">متصل دلوقتي</div>
+          </div>
+          <div class="adm-stat">
+            <div class="adm-stat-val" id="adm-today">—</div>
+            <div class="adm-stat-lbl">شحنات اليوم</div>
+          </div>
+          <div class="adm-stat">
+            <div class="adm-stat-val" id="adm-views" style="color:var(--gold2)">—</div>
+            <div class="adm-stat-lbl">شافوا الإشعار</div>
+          </div>
         </div>
         <div class="admin-sep">نوع الإشعار</div>
         <div class="admin-type-grid">
@@ -810,8 +859,58 @@ setTimeout(()=>{
     startCountdown();
     updateProgress();
     pollBroadcast();
+    initSession();      // ← بدء الـ ping الحقيقي
   },800);
 },3000);
+
+// ═══════════════════════════════════════════════
+// REAL ONLINE COUNTER — ping كل 20 ثانية
+// ═══════════════════════════════════════════════
+let myUid = null;
+
+function initSession() {
+  // أنشئ uid فريد لهذا المتصفح في هذه الجلسة
+  myUid = sessionStorage.getItem('tlsh_uid');
+  if (!myUid) {
+    myUid = 'u_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+    sessionStorage.setItem('tlsh_uid', myUid);
+  }
+  sendPing();                          // ping فوري عند الدخول
+  setInterval(sendPing, 20000);        // ping كل 20 ثانية
+  fetchOnlineCount();                  // اجلب العداد فوراً
+  setInterval(fetchOnlineCount, 15000);// حدّث العداد كل 15 ثانية
+}
+
+async function sendPing() {
+  try {
+    await fetch('/ping', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({uid: myUid}),
+      keepalive: true
+    });
+  } catch {}
+}
+
+async function fetchOnlineCount() {
+  try {
+    const r = await fetch('/online-count');
+    const d = await r.json();
+    const n = d.count || 1; // دايماً على الأقل 1 (الشخص اللي بيشوف)
+    const countEl = _('onlineCount');
+    const labelEl = _('onlineLabel');
+    if (countEl) countEl.textContent = n;
+    if (labelEl) {
+      if (n === 1)      labelEl.textContent = 'متصل دلوقتي';
+      else if (n === 2) labelEl.textContent = 'متصلين دلوقتي';
+      else              labelEl.textContent = 'متصلين دلوقتي';
+    }
+    // حدّث الأدمن لو مفتوح
+    const admEl = _('adm-online');
+    if (admEl) admEl.textContent = n;
+  } catch {}
+}
+// ════════════════════════════════════════════════
 
 // Countdown to Ramadan 2026
 const RAMADAN_TARGET=new Date('2026-02-20T00:00:00');
@@ -901,7 +1000,20 @@ function checkAdminPw(){
   if(val===ADMIN_PW){adminAuthed=true;_('adminAuth').style.display='none';_('adminContent').classList.add('visible');loadAdminStats();}
   else{_('authErr').classList.add('show');setTimeout(()=>{_('authErr').classList.remove('show');_('adminPwInput').value='';},1200);}
 }
-async function loadAdminStats(){try{const r=await fetch('/admin-stats');const d=await r.json();if(d.ok){_('adm-online').textContent=d.online;_('adm-today').textContent=d.today;_('adm-views').textContent=d.views??'—';}}catch{}}
+async function loadAdminStats(){
+  try{
+    const r=await fetch('/admin-stats');const d=await r.json();
+    if(d.ok){
+      _('adm-online').textContent=d.online;
+      _('adm-today').textContent=d.today;
+      _('adm-views').textContent=d.views??'—';
+    }
+  }catch{}
+  // حدث الأدمن كل 10 ثواني وهو مفتوح
+  if(document.getElementById('adminOverlay').classList.contains('open')&&adminAuthed){
+    setTimeout(loadAdminStats,10000);
+  }
+}
 function setType(t){selectedType=t;['info','ok','err'].forEach(x=>{const b=_('type-'+x);b.className='type-btn';if(x===t)b.classList.add('active-'+x);});updatePreview();}
 function setDur(el,sec){selectedDur=sec;document.querySelectorAll('.dur-btn').forEach(b=>b.classList.remove('active'));el.classList.add('active');}
 function updatePreview(){
@@ -998,9 +1110,28 @@ async function deleteSchedule(id){const fd=new FormData();fd.append('id',id);awa
 </body>
 </html>"""
 
+# ─── ROUTES ─────────────────────────────────────────────────────────
+
 @app.route("/")
 def index():
     return render_template_string(PAGE)
+
+# ✅ endpoint الـ ping الجديد — القلب الحقيقي للعداد
+@app.route("/ping", methods=["POST"])
+def ping():
+    try:
+        data = request.get_json(silent=True) or {}
+        uid  = data.get("uid", "")
+        if uid:
+            ping_user(uid)
+    except:
+        pass
+    return jsonify({"ok": True, "online": get_online_count()})
+
+# ✅ endpoint اجلب عدد المتصلين بدون اي حاجة تانية
+@app.route("/online-count")
+def online_count():
+    return jsonify({"ok": True, "count": get_online_count()})
 
 @app.route("/broadcast-poll")
 def broadcast_poll():
@@ -1063,7 +1194,12 @@ def admin_stats():
         bc = read_broadcast()
         views = bc.get("views",0) if bc.get("text") else 0
     except: pass
-    return jsonify({"ok":True,"online":get_online_count(),"today":count,"views":views})
+    return jsonify({
+        "ok":     True,
+        "online": get_online_count(),   # ← العدد الحقيقي
+        "today":  count,
+        "views":  views
+    })
 
 @app.route("/schedule-add", methods=["POST"])
 def schedule_add():
