@@ -324,6 +324,12 @@ input,textarea{-webkit-user-select:text;user-select:text;}
 .ended-line{height:1px;background:linear-gradient(90deg,transparent,rgba(200,168,75,.3),transparent);margin:16px 0;}
 .ended-note{font-size:.68rem;color:var(--ink3);line-height:1.7;}
 .ended-note b{color:var(--gold2);font-weight:800;}
+.ended-stats-row{display:flex;align-items:center;justify-content:center;gap:0;margin:4px 0;}
+.ended-stat{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;}
+.ended-stat-icon{font-size:1.4rem;line-height:1;}
+.ended-stat-label{font-size:.68rem;font-weight:900;color:var(--ink);letter-spacing:.3px;}
+.ended-stat-desc{font-size:.52rem;font-weight:700;color:var(--ink3);}
+.ended-stat-divider{width:1px;height:40px;background:var(--stroke);flex-shrink:0;}
 
 /* COUNTDOWN */
 .countdown-card{background:var(--l1);border:1px solid var(--stroke);border-radius:var(--r);padding:20px 16px;margin-bottom:14px;}
@@ -586,12 +592,35 @@ input[type="datetime-local"]{color-scheme:dark;}
 
     <div class="ended-card card-in" style="animation-delay:.0s">
       <span class="ended-moon-icon">🌙</span>
-      <div class="ended-title">انتهت كروت رمضان 1446</div>
-      <div class="ended-subtitle">شكراً لكل من استخدم TALASHNY هذا الموسم<br>كانت رحلة رائعة معكم 💛</div>
+      <div class="ended-title">انتهى موسم رمضان 1446</div>
+      <div class="ended-subtitle">
+        شكراً لكل من وثق في <b style="color:var(--gold2)">تطبيق الكروت</b> هذا الموسم<br>
+        كنتوا السبب إن الخدمة دي تنجح 💛
+      </div>
+      <div class="ended-line"></div>
+      <div class="ended-stats-row">
+        <div class="ended-stat">
+          <div class="ended-stat-icon">⚡</div>
+          <div class="ended-stat-label">شحن فوري</div>
+          <div class="ended-stat-desc">في ثوان</div>
+        </div>
+        <div class="ended-stat-divider"></div>
+        <div class="ended-stat">
+          <div class="ended-stat-icon">🔒</div>
+          <div class="ended-stat-label">آمن 100%</div>
+          <div class="ended-stat-desc">بدون بيانات</div>
+        </div>
+        <div class="ended-stat-divider"></div>
+        <div class="ended-stat">
+          <div class="ended-stat-icon">🎯</div>
+          <div class="ended-stat-label">كل الفئات</div>
+          <div class="ended-stat-desc">فودافون مصر</div>
+        </div>
+      </div>
       <div class="ended-line"></div>
       <div class="ended-note">
-        خدمة <b>شحن كروت رمضان فودافون</b> متاحة بس خلال شهر رمضان المبارك.<br>
-        هنعود بشكل أقوى في <b>رمضان القادم 2027</b> إن شاء الله.
+        <b>تطبيق الكروت</b> بيشتغل بس في شهر رمضان المبارك —
+        هنعود أقوى وأسرع في <b>رمضان 2027</b> إن شاء الله 🚀
       </div>
       <div class="ended-line"></div>
       <div class="online-inline">
