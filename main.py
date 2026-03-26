@@ -573,7 +573,7 @@ input[type="datetime-local"]{color-scheme:dark;}
       </div>
     </div>
     <div class="banner-right">
-      <div class="banner-season">رمضان 2026</div>
+      <div class="banner-season">رمضان 2027</div>
       <div class="banner-tag">
         <div class="live-dot" id="liveDotBtn" onclick="handleLiveTap()"
              style="width:6px;height:6px;border-radius:50%;background:var(--green);animation:livePulse 2s infinite;cursor:pointer;flex-shrink:0;"></div>
@@ -591,7 +591,7 @@ input[type="datetime-local"]{color-scheme:dark;}
       <div class="ended-line"></div>
       <div class="ended-note">
         خدمة <b>شحن كروت رمضان فودافون</b> متاحة بس خلال شهر رمضان المبارك.<br>
-        هنعود بشكل أقوى في <b>رمضان القادم 2026</b> إن شاء الله.
+        هنعود بشكل أقوى في <b>رمضان القادم 2027</b> إن شاء الله.
       </div>
       <div class="ended-line"></div>
       <div class="online-inline">
@@ -615,7 +615,7 @@ input[type="datetime-local"]{color-scheme:dark;}
         <div class="cd-unit"><div class="cd-num" id="cd-secs">--</div><div class="cd-lbl">ثانية</div></div>
       </div>
       <div class="cd-date-row">
-        <div class="cd-date-chip"><i class="fas fa-calendar-star"></i>&nbsp;المتوقع: ~20 فبراير 2026</div>
+        <div class="cd-date-chip"><i class="fas fa-calendar-star"></i>&nbsp;المتوقع: ~10 مارس 2027</div>
       </div>
     </div>
 
@@ -660,7 +660,7 @@ input[type="datetime-local"]{color-scheme:dark;}
         <div class="footer-name">TALASHNY</div>
         <div class="footer-dot"></div>
       </div>
-      <div class="footer-copy">© 2025 · كروت رمضان فودافون · نراكم العام القادم</div>
+      <div class="footer-copy">© 2026 · كروت رمضان فودافون · نراكم العام القادم</div>
     </div>
   </div>
 
@@ -913,7 +913,7 @@ async function fetchOnlineCount() {
 // ════════════════════════════════════════════════
 
 // Countdown to Ramadan 2026
-const RAMADAN_TARGET=new Date('2026-02-20T00:00:00');
+const RAMADAN_TARGET=new Date('2027-03-10T00:00:00');
 function pad(n){return String(n).padStart(2,'0');}
 let prevSecs=-1;
 function startCountdown(){
@@ -934,7 +934,7 @@ function startCountdown(){
 }
 
 function updateProgress(){
-  const start=new Date('2025-03-30T00:00:00'),end=RAMADAN_TARGET,now=new Date();
+  const start=new Date('2026-03-26T00:00:00'),end=RAMADAN_TARGET,now=new Date();
   const pct=Math.min(100,Math.max(0,Math.round((now-start)/(end-start)*100)));
   const remaining=Math.max(0,Math.floor((end-now)/86400000));
   _('prog-fill').style.width=pct+'%';
