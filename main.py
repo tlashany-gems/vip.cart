@@ -592,9 +592,9 @@ input[type="datetime-local"]{color-scheme:dark;}
 
     <div class="ended-card card-in" style="animation-delay:.0s">
       <span class="ended-moon-icon">🌙</span>
-      <div class="ended-title">انتهى موسم رمضان 1446</div>
+      <div class="ended-title">انتهى رمضان 1446</div>
       <div class="ended-subtitle">
-        شكراً لكل من وثق في <b style="color:var(--gold2)">تطبيق الكروت</b> هذا الموسم<br>
+        شكراً لكل من استخدم في <b style="color:var(--gold2)">تطبيق الكروت</b> هذا العام<br>
         كنتوا السبب إن الخدمة دي تنجح 💛
       </div>
       <div class="ended-line"></div>
@@ -608,13 +608,13 @@ input[type="datetime-local"]{color-scheme:dark;}
         <div class="ended-stat">
           <div class="ended-stat-icon">🔒</div>
           <div class="ended-stat-label">آمن 100%</div>
-          <div class="ended-stat-desc">بدون بيانات</div>
+          <div class="ended-stat-desc">بدون حفظ بينات</div>
         </div>
         <div class="ended-stat-divider"></div>
         <div class="ended-stat">
           <div class="ended-stat-icon">🎯</div>
           <div class="ended-stat-label">كل الفئات</div>
-          <div class="ended-stat-desc">فودافون مصر</div>
+          <div class="ended-stat-desc">فودافون</div>
         </div>
       </div>
       <div class="ended-line"></div>
