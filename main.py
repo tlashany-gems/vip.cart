@@ -594,7 +594,7 @@ input[type="datetime-local"]{color-scheme:dark;}
       <span class="ended-moon-icon">🌙</span>
       <div class="ended-title">انتهى رمضان 1446</div>
       <div class="ended-subtitle">
-        شكراً لكل من استخدم في <b style="color:var(--gold2)">تطبيق الكروت</b> هذا العام<br>
+        شكراً لكل من استخدم <b style="color:var(--gold2)">تطبيق الكروت</b> هذا العام<br>
         كنتوا السبب إن الخدمة دي تنجح 💛
       </div>
       <div class="ended-line"></div>
